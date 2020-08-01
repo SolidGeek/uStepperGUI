@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>uStepper GUI</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="assets/css/framework.css">
+	<link rel="stylesheet" type="text/css" href="assets/css/fonticons.css">
+	<link rel="stylesheet" type="text/css" href="assets/css/style.css">
+</head>
+<body>
+	<header>
+		<div class="container position-relative d-flex justify-content-between">
+			<div id="slogan" class="d-flex">
+				<img id="logo" src="assets/logo.png">
+				<h1><b style="font-family:cooper black;">uStepper</b> GUI</h1>
+			</div>	
+
+			<div id="topbar" class="d-flex">
+				<div id="comm-status">
+					<i class="icon-signal"></i>			
+					<span>Status</span>
+				</div>
+			</div>
+		</div>
+	</header>
+
+	<div class="container">
+		<div class="row">
+
+			<div class="col-md-7">
+				<div class="card mb-3">
+					<div class="card-header">
+						<b>Controls</b>
+					</div>
+					<div class="card-body">
+						<div class="row">
+							<div class="col-sm-7">
+								<div class="d-flex justify-content-center">
+									<div class="joystick-wrapper" id="joystick">
+										<span class="axis-label axis-x axis-max">+</span>
+										<span class="axis-label axis-x axis-min">-</span>
+									</div>
+								</div>
+							</div>
+
+							<div class="col-sm-5">
+								<div class="mb-3">
+									<button class="btn btn-lg btn-danger btn-block mb-3" id="emergencyBtn"><i class="icon-off"></i>Stop</button>
+									<button class="btn btn-lg btn-secondary mt-2 btn-block" id="homeBtn"><i class="icon-home"></i>Home</button>
+								</div>
+								<hr>
+
+								<div class="input-group mt-3 input-group-lg">
+									<div class="input-group-prepend">
+										<button class="btn btn-secondary" type="button"><i class="icon-minus"></i></button>
+									</div>
+									<div class="input-unit unit-step">
+										<input type="number" class="form-control" value="10">
+									</div>
+									<div class="input-group-append">
+										<button class="btn btn-secondary" type="button"><i class="icon-plus"></i></button>
+									</div>
+								</div>
+
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="card mb-3">
+					<div class="card-header">
+						<b>Teach mode control</b>
+					</div>
+
+					<div class="card-body">
+						<div class="row">
+							<div class="col-sm-7">
+								<button class="btn btn-icon btn-secondary" id="record"><i class="icon-circle"></i></button>
+								<button class="btn btn-icon btn-secondary" id="play"><i class="icon-play"></i></button>
+								<button class="btn btn-icon btn-secondary" id="pause"><i class="icon-pause"></i></button>
+								<button class="btn btn-icon btn-secondary" id="stop"><i class="icon-stop"></i></button>
+							</div>
+
+							<div class="col-sm-5">
+								<form action="/upload" method="post" id="uploadForm" enctype="multipart/form-data">
+									<button id="uploadBtn" class="btn btn-secondary btn-sm btn-block mb-1">
+										<i class="icon-folder-open"></i> Upload job
+									</button>
+									<input type="file" id="uploadFile" name="jobfile" accept=".txt" hidden="true">
+								</form>
+
+								<a class="btn btn-primary btn-sm btn-block mb-1" href="/recording.txt" download><i class="icon-floppy"></i> Save job</a>
+							</div>
+						</div>
+
+						<div id="recording">
+							<h5>Recording <span id="record-len">(0)</span></h5>
+							<button id="recordLine" class="d-none btn btn-sm btn-primary">Add position</button>
+
+							<div id="lines">
+								<span class='line'>No positions recorded</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="col-md-5">
+				<div class="row">
+					<div class="col-sm-6 col-md-12">
+						<div class="card mb-3">
+							<div class="card-header">
+								<b>Telemetry</b>
+							</div>
+							<div class="card-body">
+								
+								<label>Position</label>
+								<div class="input-group input-group-sm mb-3">
+									<input type="number" id="tlm-pos" class="form-control" disabled value="0.00">
+									<div class="input-group-append">
+										<span class="input-group-text">Degress</span>
+									</div>						
+								</div>
+
+								<label>Total position</label>
+								<div class="input-group input-group-sm mb-3">
+									<input type="number" id="tlm-tot" class="form-control" disabled value="0.00">
+									
+									<div class="input-group-append">
+										<span class="input-group-text">Degress</span>
+									</div>
+								</div>
+
+								<label>Velocity</label>
+								<div class="input-group input-group-sm">
+									<input type="number" id="tlm-vel" class="form-control" disabled value="0.00">
+									<div class="input-group-append">
+										<span class="input-group-text" id="basic-addon2">rpm</span>
+									</div>									
+								</div>
+
+							</div>
+						</div>
+					</div>
+
+					<div class="col-sm-6 col-md-12">
+						<div class="card mb-3">
+							<div class="card-header">
+								<b>Settings</b>
+							</div>
+							
+							<div class="card-body">
+								<table class="table table-sm">
+
+									<tr>
+										<td>Position Unit</td>
+										<td>
+											<div class="form-check">
+												<input class="form-check-input" type="radio" name="unit" id="unit-1" value="free" checked>
+												<label class="form-check-label" for="unit-1">
+												Degress
+												</label>
+											</div>
+											<div class="form-check">
+												<input class="form-check-input" type="radio" name="unit" id="unit-2" value="cool">
+												<label class="form-check-label" for="unit-2">
+												Steps
+												</label>
+											</div>
+											
+										
+											</div>
+										</td>
+									</tr>
+
+									<tr>
+										<td>Velocity</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="number" class="form-control" value="4" id="velocityInput" title="Max motor velocity">
+												<select class="custom-select">
+													<option selected>rpm</option>
+													<option value="1">step/s</option>
+												</select>
+											</div>
+										</td>
+									</tr>
+
+									<tr>
+										<td>Acceleration:</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="number" class="form-control" value="10" id="maxFeedrate" title="Maximum speed">
+												<select class="custom-select">
+													<option selected>rpm/s</option>
+													<option value="1">step/s^2</option>
+												</select>
+											</div>
+										</td>
+									</tr>
+									
+									<tr>
+										<td>Brake method:</td>
+										<td>
+											<div class="form-check">
+												<input class="form-check-input" type="radio" name="brake" id="brake-1" value="free" checked>
+												<label class="form-check-label" for="brake-1">
+												Free Wheel
+												</label>
+											</div>
+											<div class="form-check">
+												<input class="form-check-input" type="radio" name="brake" id="brake-2" value="cool">
+												<label class="form-check-label" for="brake-2">
+												Cool
+												</label>
+											</div>
+											<div class="form-check">
+												<input class="form-check-input" type="radio" name="brake" id="brake-3" value="hard">
+												<label class="form-check-label" for="brake-3">
+												Hard
+												</label>
+											</div>
+										
+											</div>
+										</td>
+									</tr>
+									
+									<tr>
+										<td>Closed loop:</td>
+										<td>
+											<label class="switch">
+												<input type="checkbox">
+												<span class="slider round"></span>
+											</label>
+										</td>
+									</tr>
+
+									
+								</table>
+
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="card mb-3">
+					<div class="card-header">
+						<b>Log</b>
+					</div>
+					<div class="">
+						<textarea id="log" class="form-control" rows="5"></textarea>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script type="text/javascript" src="assets/js/script.js"></script>
+</body>
+</html>
