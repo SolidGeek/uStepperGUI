@@ -50,15 +50,15 @@
 								</div>
 								<hr>
 
-								<div class="input-group mt-3 input-group-lg">
+								<div class="input-group mt-3 input-group">
 									<div class="input-group-prepend">
-										<button class="btn btn-secondary" type="button"><i class="icon-minus"></i></button>
+										<button class="btn btn-secondary" type="button" id="moveCCWBtn"><i class="icon-minus"></i></button>
 									</div>
-									<div class="input-unit unit-step">
-										<input type="number" class="form-control" value="10">
+									<div class="input-unit unit-degree">
+										<input type="number" class="form-control" id="moveInput" value="45">
 									</div>
 									<div class="input-group-append">
-										<button class="btn btn-secondary" type="button"><i class="icon-plus"></i></button>
+										<button class="btn btn-secondary" type="button" id="moveCWBtn"><i class="icon-plus"></i></button>
 									</div>
 								</div>
 
@@ -116,7 +116,10 @@
 								
 								<label>Position</label>
 								<div class="input-group input-group-sm mb-3">
-									<input type="number" id="tlm-pos" class="form-control" disabled value="0.00">
+									<div class="input-group-prepend">
+										<span class="input-group-text"><div id="anglePointer"><i class="icon-up"></i></div></span>
+									</div>		
+									<input type="number" id="dataPosition" class="form-control" disabled value="0.00">
 									<div class="input-group-append">
 										<span class="input-group-text">Degress</span>
 									</div>						
@@ -124,7 +127,7 @@
 
 								<label>Total position</label>
 								<div class="input-group input-group-sm mb-3">
-									<input type="number" id="tlm-tot" class="form-control" disabled value="0.00">
+									<input type="number" id="dataTotal" class="form-control" disabled value="0.00">
 									
 									<div class="input-group-append">
 										<span class="input-group-text">Degress</span>
@@ -133,7 +136,7 @@
 
 								<label>Velocity</label>
 								<div class="input-group input-group-sm">
-									<input type="number" id="tlm-vel" class="form-control" disabled value="0.00">
+									<input type="number" id="dataVelocity" class="form-control" disabled value="0.00">
 									<div class="input-group-append">
 										<span class="input-group-text" id="basic-addon2">rpm</span>
 									</div>									
@@ -177,7 +180,7 @@
 										<td>Velocity</td>
 										<td>
 											<div class="input-group input-group-sm">
-												<input type="number" class="form-control" value="4" id="velocityInput" title="Max motor velocity">
+												<input type="number" class="form-control" value="100" id="velocityInput" title="Max motor velocity">
 												<select class="custom-select">
 													<option selected>rpm</option>
 													<option value="1">step/s</option>

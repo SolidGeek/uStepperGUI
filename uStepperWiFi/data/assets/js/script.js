@@ -2,6 +2,10 @@
  * G-Code commands 
  */
 
+const FULLSTEPS = 200;
+const MICROSTEPS = 256;
+const STEPS_PER_REV = FULLSTEPS * MICROSTEPS;
+
 // Move commands
 const GCODE_MOVE 			= "G0";
 const GCODE_MOVE_CC 		= "G1";
@@ -14,13 +18,12 @@ const GCODE_HOME 			= "G5";
 const GCODE_STOP 			= "M0"; // Stop everything
 const GCODE_SET_SPEED 		= "M1";
 const GCODE_SET_ACCEL 		= "M2";
-const GCODE_SET_UNIT_ANGLE 	= "M3";
-const GCODE_SET_UNIT_STEP 	= "M4";
-const GCODE_SET_BRAKE_FREE	= "M5";
-const GCODE_SET_BRAKE_COOL 	= "M6";
-const GCODE_SET_BRAKE_HARD 	= "M7";
-const GCODE_SET_CL_ENABLE 	= "M8"; // Enable closed loop 
-const GCODE_SET_CL_DISABLE 	= "M9"; // Disable closed loop
+const GCODE_SET_BRAKE_FREE	= "M3";
+const GCODE_SET_BRAKE_COOL 	= "M4";
+const GCODE_SET_BRAKE_HARD 	= "M5";
+const GCODE_SET_CL_ENABLE 	= "M6"; // Enable closed loop 
+const GCODE_SET_CL_DISABLE 	= "M7"; // Disable closed loop
+
 const GCODE_RECORD_START 	= "M10";
 const GCODE_RECORD_STOP 	= "M11";
 const GCODE_RECORD_ADD 		= "M12";
@@ -29,7 +32,7 @@ const GCODE_RECORD_PAUSE 	= "M14";
 const GCODE_REQUEST_DATA 	= "M15";
 
 // Min interval in ms between each command (not guaranteed)
-const wsInterval = 100;
+const wsInterval = 50;
 // Address to upload
 const fileUploadURL = "/upload";
 
@@ -38,7 +41,7 @@ const fileUploadURL = "/upload";
 var websocket;
 
 // Telemetry returned from device
-var telemetry = {
+var tlm = {
 	position: 0.0,
 	total: 0.0, 
 	velocity: 0.0, 
@@ -57,6 +60,8 @@ var initPosition = true; // SHOULD BE FALSE
 var websocketCnt = 0;
 var silenceWebsocket = 0;
 
+var lastCommand = "";
+
 
 // Element references to modify DOM
 var statusBar 		= document.getElementById("comm-status");
@@ -74,7 +79,15 @@ var emergencyBtn	= document.getElementById('emergencyBtn');
 var linesElement	= document.getElementById('lines');
 var recordingElement = document.getElementById('recording');
 
-var velocityInput = document.getElementById('velocityInput');
+var dataPositionElm	= document.getElementById('dataPosition');
+var dataTotalElm	= document.getElementById('dataTotal');
+var dataVelocityElm	= document.getElementById('dataVelocity');
+
+var velocityInput 	= document.getElementById('velocityInput');
+var moveInput 		= document.getElementById('moveInput');
+var moveCWBtn 		= document.getElementById('moveCWBtn');
+var moveCCWBtn 		= document.getElementById('moveCCWBtn');
+var anglePointer 	= document.getElementById('anglePointer');
 
 
 
@@ -204,6 +217,7 @@ function stopRecording()
 // Home the device
 homeBtn.onclick = function(){
 	// Stop any on-going recording
+	requestTlm = false;
 	stopRecording();
 
 	sendCommand( GCODE_HOME );
@@ -217,6 +231,21 @@ emergencyBtn.onclick = function(){
 
 	sendCommand( GCODE_STOP );
 };
+
+
+moveCWBtn.onclick = function(){
+
+	var step = moveInput.value * (STEPS_PER_REV/360.0);
+	sendCommand( GCODE_MOVE, [{name: "A", value: Math.abs(step)}] );
+
+}
+
+moveCCWBtn.onclick = function(){
+
+	var step = moveInput.value * (STEPS_PER_REV/360.0);
+	sendCommand( GCODE_MOVE_CC, [{name: "A", value: Math.abs(step)}] );
+
+}
 
 // Start and stop recording
 recordBtn.onclick = function(){
@@ -233,10 +262,12 @@ recordBtn.onclick = function(){
 	recordLineBtn.classList.toggle('d-none');
 };
 
+var lastVelocity = 0.0;
+
 // Timer function to keep the 
 var websocketInterval = function() {
-	// If a connection is established
-	joystickControl();
+
+    // If a connection is established
 	if(websocket.readyState == 1){
 		// If the initial position is received
 		if( initPosition ){
@@ -244,17 +275,21 @@ var websocketInterval = function() {
 			if(websocketCnt === 0){
 				velocity = joystickControl();
 
-				if(velocity !== null){
+				if(velocity != lastVelocity){
 					if( velocity > 0 )
 						sendCommand( GCODE_CONTINUOUS, [{name: "A", value: Math.abs(velocity)}] );
 					else
 						sendCommand( GCODE_CONTINUOUS_CC, [{name: "A", value: Math.abs(velocity)}] );
 				}
 
+				lastVelocity = velocity;
+
 				websocketCnt = 1;
 			}
 			else if(websocketCnt === 1){
-				sendCommand( GCODE_REQUEST_DATA );
+				if( requestTlm )
+					sendCommand( GCODE_REQUEST_DATA );
+
 				websocketCnt = 0;
 			}
 		}
@@ -271,11 +306,12 @@ function joystickControl(){
 		var values = angleJoystick.getRatio();
 
 		var velocity = values.x * velocityInput.value;
+		velocity = velocity.toFixed(2);
 		
 		return velocity;
 	}
 
-	return null;
+	return 0.0;
 }
 
 // Function to initialize the websocket communication
@@ -300,6 +336,8 @@ function initWebSocket(){
 	window.addEventListener('beforeunload', function() {
 		websocket.close();
 	});
+
+	requestTlm = true;
 
 	// Initiate timer to retry the websocket if no connection is made
 	setTimeout(websocketInterval, wsInterval);
@@ -343,46 +381,41 @@ function onWsMessage(event) {
 		// Please send new command 
 		commandAck = true;
 
-	} else if( data.includes("RDY") ){
+	} else if( data.includes("DATA") ){
 
-		commandAck = true;
-
-	// Telemetry == TLM
-	} else if( data.includes("TLM") ){
-
-		var data = [];
+		var values = [];
 		// Read data about position and update current positions
 		var items = data.split(" ");
-		items.shift(); // Remove "TLM" from string
+		items.shift(); // Remove "DATA" from string
 
 		for (var i in items) {
 			// Remove the prefix of each datastring f.x. P, T and S of "TLM P20 T450 S0"
-	    	data[i] = items[i].substring(1, items[i].length);
+	    	values[i] = items[i].substring(1, items[i].length);
 		}
 
-		telemetry.posistion = parseFloat(data[0]);
-		telemetry.total 	= parseFloat(data[1]);
-		telemetry.velocity 	= parseFloat(data[2]);
-
-		if(!isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)){
-			return;
-		}
+		tlm.posistion 	= parseFloat(values[0])%360;
+		tlm.total 		= parseFloat(values[0]);
+		tlm.velocity 	= parseFloat(values[1]);
 
 		if(initPosition != true){
 			addToLog( "Position received" );
 		}
 
 		initPosition = true;
-		/* xDisplay.value = pos.x.toFixed(0);
-		yDisplay.value = pos.y.toFixed(0);
-		zDisplay.value = pos.z.toFixed(0); */
+		
+		anglePointer.style.transform = 'rotate('+tlm.posistion+'deg)';
+		dataPositionElm.value 	= tlm.posistion.toFixed(2);
+		dataTotalElm.value 		= tlm.total.toFixed(2);
+		dataVelocityElm.value 	= tlm.velocity.toFixed(2);
 	}
-	else if(data.includes("HOMINGDONE"))
-	{
-		silenceWebsocket = 0;
+	else if(data.includes("DONE"))
+	{	
+		// uStepper is done after blocking operation.
+		// Safely begin request of data again
+		requestTlm = true;
 	}
 	else {
-		console.log( "Unknown: " +  data );
+		console.log( "Unknown response: \"" + data + "\"");
 	}
 }
 
@@ -499,6 +532,7 @@ function joystick(parent) {
 		active = false;
 
 		currentPos = { x: 0, y: 0 };
+		currentRatio = { x: 0, y: 0 };
 	}
 
 	parent.appendChild(stick);

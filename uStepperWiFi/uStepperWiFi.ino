@@ -1,96 +1,181 @@
-#include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include <WebSocketsServer.h>
-// Include SPIFFS filesystem
-#include "FS.h"
-// Include GCode class
-#include "test/GCode.h"
 #include <WebOTA.h>
+#include "FS.h"
+#include "GCode.h"
+#include "constants.h"
+
+#define UARTPORT Serial
 
 ESP8266WebServer server(80);
 WebSocketsServer websocket = WebSocketsServer(81);
-bool startOTA = 0;
-GCode link;
 
-const char* VERSION = "0.1.0";
-const char *ssid = "uStepper GUI";
-const char *password = "12345679";
+GCode comm;
+GCode webcomm;
 
-bool isRecording = false;
-bool playRecording = false;
-uint32_t lastPackage = 0;
-char * response = NULL;
-int32_t playStepsDelay = 0;
-// Led blinking variables
-bool ledState = LOW;
-uint8_t statusLed = 4;
-uint32_t previousBlink = 0;
+const char* VERSION   = "0.1.0";
+const char *ssid      = "uStepper GUI";
+const char *password  = "12345679";
 
-// Local path to save the GCode recordings
-char recordPath[] = "/recording.txt";
-uint16_t recordLineCount = 0;
-bool positionReached = false;
-double angle;
+bool ledState             = LOW;
+bool isRecording          = false;
+bool playRecording        = false;
+bool positionReached      = false;
+char * response           = NULL;
+uint8_t statusLed         = 4;
+uint32_t lastPackage      = 0;
+uint32_t playStepsDelay   = 0;
+uint32_t previousBlink    = 0;
+uint16_t recordLineCount  = 0;
+
+char recordPath[]         = "/recording.txt";
+
+struct{
+  float angle = 0.0;
+  int32_t velocity = 0;
+} tlm_data;
 
 void setup() {
   // Init Serial port for UART communication
-  Serial.begin(115200);
-  link.setSerialPort(&Serial);
-  link.setBufferSize(1);
+  UARTPORT.begin(115200);
 
-  // Built-in LED is pin 5
+  // Setup communication object between ESP and uStepper
+  comm.setSendFunc(&uart_send);
+  comm.addCommand( "DATA",  &uart_processData );
+  comm.addCommand( "REACH", &uart_lineReached );
+  comm.addCommand( NULL,    &uart_default );
+
+  // Setup communication object between webapp and ESP
+  webcomm.setSendFunc(&web_send);
+  webcomm.addCommand( GCODE_STOP,         &web_stop );
+  webcomm.addCommand( GCODE_RECORD_START, &web_record );
+  webcomm.addCommand( GCODE_RECORD_STOP,  &web_record );
+  webcomm.addCommand( GCODE_RECORD_ADD,   &web_addLine );
+  webcomm.addCommand( GCODE_RECORD_PLAY,  &web_record );
+  webcomm.addCommand( GCODE_RECORD_PAUSE, &web_record );
+  webcomm.addCommand( NULL,               &web_default );
+  
+  // Setup
   pinMode(statusLed, OUTPUT);
   initSPIFFS();
-
   webota.init(&server, "/webota");
-
   initWiFi();
   initWebsocket();
   initWebserver();
 }
-    
-void loop() {
 
+void loop() {
   websocket.loop();
   server.handleClient();
 
-  // Listen for messages coming from master
-  if (link.run()) {
+  comm.run();
+  webcomm.run();
 
-    // Read newest response from fifo buffer
-    response = link.getNextValue();
+  // Feed the gcode handler serial data
+  while( UARTPORT.available() > 0 )
+    comm.insert( UARTPORT.read() );
 
-    // If response is telemetry, pull the values from the message and send to ESP
-    if (link.check("TLM", response) ) {
-      link.value("A", &angle); // Angle of motor "A"
-      
-      websocket.broadcastTXT(response);
-    }
-    // For knowing when the latest sent line from the recording is reached
-    else if (link.check("REACHED", response)) {
-      positionReached = true;
-      playStepsDelay = millis() + 1000;
-    }
-    else {
-      // Probably an error or other important information, send it to GUI for inspection
-      websocket.broadcastTXT(response);
-    }
-  }
+  recordHandler();
+  ledHandler();
+}
 
-  if (playRecording) {
 
-    // Send next line from the recording
-    if( positionReached ){
-      if(millis() > playStepsDelay)
-      {
-        positionReached = false;
+/* 
+ * --- GCode functions ---
+ * Used by the GCode class to handle the different commands and send data
+ */
+ 
+void uart_send(char *data){
+  UARTPORT.print(data);
+}
+
+// Return the data / command to the ESP
+void uart_default(char *cmd, char *data){
+  webcomm.send(data);
+}
+
+void uart_processData(char *cmd, char *data){
+  comm.value("A", &tlm_data.angle);
+  comm.value("V", &tlm_data.velocity);
+
+  // Send data along to webapp
+  webcomm.send(data);
+}
+
+void uart_lineReached(char *cmd, char *data){
+  positionReached = true;
+  playStepsDelay = millis() + 1000;
+}
+
+
+void web_send(char *data){
+  websocket.broadcastTXT(data);
+}
+
+void web_default(char *cmd, char *data){
+  // Send the packet along to uStepper
+  comm.send(data);
+}
+
+void web_stop(char *cmd, char *data){
+  playRecording = false;
+  comm.send(data);
+}
+
+void web_addLine(char *cmd, char *data){
+  char buf[50] = {'\0'};
+  char tempAngle[10] = {'\0'};
+
+  dtostrf(tlm_data.angle, 4, 2, tempAngle);
+  sprintf(buf, "A%s V%d", tempAngle, tlm_data.velocity);
+  
+  saveData(buf);
+}
+
+void web_record(char *cmd, char *data){
+  if( !strcmp(cmd, GCODE_RECORD_START )){
+    clearData();
+    isRecording = true;
     
-        playNextLine();
-      }
-    }
+  }else if( !strcmp(cmd, GCODE_RECORD_STOP ))
+    isRecording = false;
     
-  }
+  else if( !strcmp(cmd, GCODE_RECORD_PLAY )){
+    if( playRecording )
+        recordLineCount = 0; 
+    playRecording = true;
+    positionReached = true;
+    
+  }else if( !strcmp(cmd, GCODE_RECORD_PAUSE ))
+    playRecording = false;
+}
 
+/*
+ * Regular functions
+ */
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len) {
+  char *data = NULL;
+
+  if (type == WStype_TEXT) {
+    data = (char *)payload;
+    webcomm.insert(data);
+  }
+}
+
+void recordHandler(void){
+  if(!playRecording && !positionReached)
+    return;
+  
+  // Send next line from the recording
+  if(millis() > playStepsDelay){
+    positionReached = false;
+    playNextLine();
+  }
+}
+
+void ledHandler(void){
   if (millis() - lastPackage < 500) {
     if (millis() - previousBlink >= 100) {
       previousBlink = millis();
@@ -102,12 +187,10 @@ void loop() {
       digitalWrite(statusLed, LOW);
     else
       digitalWrite(statusLed, HIGH);
-  }
+  }  
 }
 
-
 void playNextLine( void ){
-  
   File file = SPIFFS.open(recordPath, "r");
   file.setTimeout(0); // Set timeout when no newline was found (no timeout plz).
 
@@ -118,13 +201,11 @@ void playNextLine( void ){
   // Read through all lines until the wanted line is reached... Is there a better way?
   for(uint16_t i = 0; i <= recordLineCount; i++){
     memset(buf, 0, sizeof(buf));
-    
     len = file.readBytesUntil('\n', buf, 50);
   }
 
   // Check if any line was read
   if (len != 0){
-    
     // Append null termination to the buffer for good measure
     buf[len] = '\0'; 
     
@@ -137,8 +218,8 @@ void playNextLine( void ){
     // For debugging
     websocket.broadcastTXT("Playing line " + String(recordLineCount) + ": " + String(command));
     
-    link.send(command, false); // False = do not add checksum
-
+    comm.send(command);
+    
     recordLineCount++;
   }else{
     recordLineCount = 0;  
@@ -148,7 +229,6 @@ void playNextLine( void ){
 }
 
 void saveData(char *data) {
-
   // Open file and keep appending
   File f = SPIFFS.open(recordPath, "a");
 
@@ -162,79 +242,6 @@ void clearData( void ){
 
   f.print("");
   f.close();
-}
-
-// Process data being send from GUI by webSocket
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len) {
-
-  // Pointer to hold reference to received payload
-  char *packet;
-  static bool test = 0;
-  // Buffer for temporary storage
-  char commandBuffer[50] = {'\0'};
-
-  if (type == WStype_TEXT) {
-    lastPackage = millis();
-
-    packet = (char *)payload;
-
-    // Emergency stop, set all motor speeds to zero
-    if (strstr(packet, "M0")) {
-      playRecording = false;
-      link.send("M10 X0.0 Y0.0 Z0.0");
-    }
-
-    // Start new recording
-    else if (strstr(packet, "M2")) {
-      clearData();
-      isRecording = true;
-      return;
-    }
-
-    // Stop recording
-    else if (strstr(packet, "M3")) {
-      isRecording = false;
-    }
-
-    // If a M10 command (xyz speeds) is received while playing drop the message
-    else if( strstr( packet, "M10")){
-      if(playRecording)
-        return;
-    }
-
-    // Play recording
-    else if (strstr(packet, "M11")) {
-      if( playRecording ){
-        // Reset playback of recording
-        recordLineCount = 0;  
-      }
-      playRecording = true;
-      positionReached = true; // In order to get playNextLine started.
-      return;
-    }
-
-    // Pause recording
-    else if (strstr(packet, "M12")) {
-      playRecording = false;
-      return;
-    }
-
-    // Add line to recording
-    else if (strstr(packet, "M13")) {
-      char temp[50] = {'\0'};
-      String recording = "A" + String(angle);
-      recording.toCharArray(temp, sizeof(temp));
-  
-      saveData(temp);
-      return;
-    }
-
-    // Afterwards, just pass the data on to the uStepper
-    strcpy(commandBuffer, packet);
-
-    // Send GCode over UART
-    link.send(commandBuffer);
-  }
 }
 
 void initWebsocket(void) {

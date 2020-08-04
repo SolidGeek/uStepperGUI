@@ -8,13 +8,19 @@ GCode::GCode(void) {
 	strcpy(this->errorRes, GCODE_DEFAULT_ERROR_RES);
 }
 
-void GCode::addCommand( char * command, void (*func)(char *command, char *data) ){
 
+void GCode::setSendFunc(void (*func)(char *data)){
+	this->sendFunc = func;
+}
+
+void GCode::addCommand( char * command, void (*func)(char *command, char *data) ){
+	// If no command is supplied, the function is used as default
 	if( command == NULL ){
 		this->defaultFunc = func;
 		return;
 	}
 
+	// Prepare structure to hold command and function pointer
 	command_func_t entry;
 
 	entry.func = func;
@@ -22,19 +28,21 @@ void GCode::addCommand( char * command, void (*func)(char *command, char *data) 
 
 	if(commandCount == 0){
 		// Allocate memory to the first command in the list.
-		this->commands = malloc( sizeof(command_func_t) ); // Probably should allocate more than one at start, however would need an index to keep track of used memory  
+		this->commands = (command_func_t*)malloc( sizeof(command_func_t) );
 	}else{
-		this->commands = realloc(this->commands, (1 + this->commandCount) * sizeof(command_func_t));
+		// Reallocate memory, as more is needed
+		this->commands = (command_func_t*)realloc(this->commands, (1 + this->commandCount) * sizeof(command_func_t));
 	}
 
+	// Add the command structure to the "array"
 	this->commands[this->commandCount++] = entry;
-
 }
 
-void GCode::listen( void ){
+void GCode::run( void ){
+	// Process the latests bytes in buffer, and get the status of the incoming packet
+	this->status = this->process();
 
-	this->status = this->read();
-
+	// If a new packet is ready
 	if (this->status == GCODE_PACKET_READY) {
 
 		// A packet is retrieved, loop through commands to see if any matches 
@@ -44,7 +52,7 @@ void GCode::listen( void ){
 
 			if( this->check( command ) ){
 				// Return a response to sender
-				this->serialPort->println(this->validRes);
+				// this->send(this->validRes, false);
 
 				// We got a match, call the function pointer associated with this command
 				this->commands[i].func( command, this->packet);
@@ -58,32 +66,27 @@ void GCode::listen( void ){
 
 	}else if ( this->status != GCODE_PACKET_NONE ){
 		// Return a response to sender
-		this->serialPort->print(this->errorRes);
-		this->serialPort->print(": ");
-		this->serialPort->println(this->status);
+		char buf[20] = {'\0'};
+
+		strcat(buf, this->errorRes);
+		strcat(buf, ": ");
+		sprintf(buf + strlen(buf), "%d", this->status);
+
+		this->send( buf, false );
 	}
 }
 
-void GCode::listCommands( void ){
+void GCode::printCommands( void ){
+	char buf[MAX_PACKET_SIZE] = {'\0'};
 
-	if( this->debugPort == NULL )
-		return;
-
-	this->debugPort->println( "Supported commands:" );
 	for (uint8_t i = 0; i < this->commandCount; ++i)
 	{	
-		this->debugPort->print("- ");
-		this->debugPort->println(this->commands[i].command);
+		strcat(buf, "- ");
+		strcat(buf, this->commands[i].command);
+		strcat(buf, "\n");
 	}
 
-}
-
-void GCode::setPort(Stream *port) { 
-	this->serialPort = port;
-}
-
-void GCode::setDebugPort(Stream *port){
-	this->debugPort = port;
+	this->send(buf, false);
 }
 
 void GCode::enableCRC(bool state){
@@ -110,7 +113,7 @@ bool GCode::check(char *cmd, char *packet ) {
 	}
 
 	strncpy(buf, packet, len);
-	
+
 	if (strcmp(buf, cmd) == 0) {
 		return true;
 	}
@@ -123,10 +126,6 @@ char *GCode::getPacket(void) {
 
 uint8_t GCode::getStatus(void){
 	return this->status;
-}
-
-void GCode::setPacket(char * p){
-	strncpy(this->packet, p, MAX_PACKET_SIZE);
 }
 
 bool GCode::value(char *name, float *var) {
@@ -161,22 +160,81 @@ bool GCode::value(char *name, float *var, char *packet ) {
 		start++;
 
 		// Find end of parameter value by searching for a space or newline
-		if (end = strpbrk(start, " \n")) {
+		end = strpbrk(start, " \n");
+		
+		if( end == NULL ){
+			len = strlen(packet);
+		}else{
 			len = end - start;
-
-			strncpy(buf, start, len);
-			buf[len] = '\0';
-
-			// Now convert the string in buf to a float
-			*var = atof(buf);
-
-			return true;
 		}
+
+		strncpy(buf, start, len);
+		buf[len] = '\0';
+
+		// Now convert the string in buf to a float
+		*var = atof(buf);
+
+		return true;
 	}
 
 	return false;
 }
 
+void GCode::insert(char data){
+	this->lastChar = micros();
+	this->inPacket = true;
+
+	// Save the char in the buffer ( but limited by MAX_PACKET_SIZE )
+	if (this->packetLen < MAX_PACKET_SIZE - 1) {
+		this->packet[this->packetLen++] = data;
+	}
+}
+
+void GCode::insert(char *data){
+	this->lastChar = micros();
+	this->inPacket = true;
+
+	strncpy(this->packet, data, MAX_PACKET_SIZE);
+}
+
+uint8_t GCode::process(void){
+
+	float crc; 	// Variable to hold checksum 
+	char end = this->packet[this->packetLen]; // Get the most end character
+
+	// If no packet is incoming, and some old packet is still in the buffer clear the old packet
+	if ( this->inPacket == false && this->packetLen > 0) {
+		this->packetLen = 0;
+		memset(this->packet, 0, sizeof(this->packet));
+		return GCODE_PACKET_NONE;
+	}
+
+	// If the timeout has been reached, or a newline has been received the string is complete
+	if ((micros() - lastChar >= PACKET_TIMEOUT || end == '\n') && inPacket == true) {
+		inPacket = false;
+
+		if( !this->useCRC ){
+
+			Serial.print("New packet: ");
+			Serial.println(this->packet);
+			return GCODE_PACKET_READY;
+		
+		}else if (this->value("*", &crc)) { // Check for checksum
+			// Checksum appended, check if it correct
+			if ((uint8_t)crc == 0xff) {
+				return GCODE_PACKET_READY;
+			}else{
+				return GCODE_PACKET_CRC_UNVALID;
+			}
+		}else{
+			return GCODE_PACKET_CRC_MISSING;
+		}
+	}
+
+	return GCODE_PACKET_NONE;
+}
+
+/* 
 uint8_t GCode::read(void) {
 
 	static bool inPacket = false; 	// New packet is incoming
@@ -232,7 +290,7 @@ uint8_t GCode::read(void) {
 	}
 
 	return GCODE_PACKET_NONE;
-}
+} */
 
 void GCode::send(char *command) { 
 	this->send(command, this->useCRC);
@@ -247,5 +305,9 @@ void GCode::send(char *command, bool checksum)
 		strcat(buf, " *255"); // Append checksum, should be calculated from entire string
 	}
 
-	this->serialPort->println(buf); // Always append a newline to indicate end of command
+	// Always append a newline to indicate end of command
+	strcat(buf, "\n");
+
+	if( this->sendFunc != NULL )
+		this->sendFunc(buf);
 }
