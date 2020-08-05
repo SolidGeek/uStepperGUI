@@ -31,6 +31,10 @@ const GCODE_RECORD_PLAY 	= "M13";
 const GCODE_RECORD_PAUSE 	= "M14";
 const GCODE_REQUEST_DATA 	= "M15";
 
+
+const APP_UNIT_DEGREES = 0;
+const APP_UNIT_STEPS = 1;
+
 // Min interval in ms between each command (not guaranteed)
 const wsInterval = 50;
 // Address to upload
@@ -61,7 +65,7 @@ var websocketCnt = 0;
 var silenceWebsocket = 0;
 
 var lastCommand = "";
-
+var positionUnit = APP_UNIT_DEGREES;
 
 // Element references to modify DOM
 var statusBar 		= document.getElementById("comm-status");
@@ -88,8 +92,48 @@ var moveInput 		= document.getElementById('moveInput');
 var moveCWBtn 		= document.getElementById('moveCWBtn');
 var moveCCWBtn 		= document.getElementById('moveCCWBtn');
 var anglePointer 	= document.getElementById('anglePointer');
+var closedLoopCheck = document.getElementById('closedLoopCheck');
+
+var unitsRadios = document.getElementsByName('brake'); 
+var brakeRadios = document.getElementsByName('brake'); 
 
 
+
+for (var i = 0; i < unitsRadios.length; i++) {
+	unitsRadios[i].addEventListener('change', function(event) {
+		var value = event.target.value;
+
+		switch( value ){
+			case "degrees":
+				positionUnit = APP_UNIT_DEGREES;
+			break;
+
+			case "steps":
+				positionUnit = APP_UNIT_STEPS;
+			break;
+		}
+	});
+}
+
+for (var i = 0; i < brakeRadios.length; i++) {
+	brakeRadios[i].addEventListener('change', function(event) {
+		var value = event.target.value;
+
+		switch( value ){
+			case "free":
+				sendCommand(GCODE_SET_BRAKE_FREE);
+			break;
+
+			case "cool":
+				sendCommand(GCODE_SET_BRAKE_COOL);
+			break;
+
+			case "hard":
+				sendCommand(GCODE_SET_BRAKE_HARD);
+			break;
+		}
+	});
+}
 
 // Call this function when the gui is loaded
 window.onload = function(){
@@ -246,6 +290,16 @@ moveCCWBtn.onclick = function(){
 	sendCommand( GCODE_MOVE_CC, [{name: "A", value: Math.abs(step)}] );
 
 }
+
+closedLoopCheck.onchange = function(){
+	var state = closedLoopCheck.checked;
+	
+	if( state == true ){
+		sendCommand( GCODE_SET_CL_ENABLE );
+	}else{
+		sendCommand( GCODE_SET_CL_DISABLE );
+	}
+};
 
 // Start and stop recording
 recordBtn.onclick = function(){

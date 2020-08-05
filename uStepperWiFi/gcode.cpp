@@ -168,13 +168,16 @@ bool GCode::value(char *name, float *var, char *packet ) {
 			len = end - start;
 		}
 
-		strncpy(buf, start, len);
-		buf[len] = '\0';
+		// Check if there is an argument, otherwise return false 
+		if( len > 0 ){
+			strncpy(buf, start, len);
+			buf[len] = '\0';
 
-		// Now convert the string in buf to a float
-		*var = atof(buf);
-
-		return true;
+			// Now convert the string in buf to a float
+			*var = atof(buf);
+			return true;
+		}
+		
 	}
 
 	return false;
@@ -214,9 +217,7 @@ uint8_t GCode::process(void){
 		inPacket = false;
 
 		if( !this->useCRC ){
-
-			Serial.print("New packet: ");
-			Serial.println(this->packet);
+			
 			return GCODE_PACKET_READY;
 		
 		}else if (this->value("*", &crc)) { // Check for checksum

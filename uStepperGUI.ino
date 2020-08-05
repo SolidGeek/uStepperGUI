@@ -10,10 +10,11 @@ GCode comm;
 
 void setup() {
 
-  // DEBUGPORT.begin(115200);
+  DEBUGPORT.begin(115200);
   UARTPORT.begin(115200);
   
   stepper.setup();
+  stepper.setMaxVelocity(100.0);
 
   comm.setSendFunc(&uart_send);
   
@@ -31,8 +32,8 @@ void setup() {
   comm.addCommand( GCODE_SET_BRAKE_FREE,  &uart_setbrake );
   comm.addCommand( GCODE_SET_BRAKE_COOL,  &uart_setbrake );
   comm.addCommand( GCODE_SET_BRAKE_HARD,  &uart_setbrake );
-  comm.addCommand( GCODE_SET_CL_ENABLE,   &uart_config );
-  comm.addCommand( GCODE_SET_CL_DISABLE,  &uart_config );
+  comm.addCommand( GCODE_SET_CL_ENABLE,   &uart_setClosedLoop );
+  comm.addCommand( GCODE_SET_CL_DISABLE,  &uart_setClosedLoop );
   
   comm.addCommand( GCODE_RECORD_START,  &uart_record );
   comm.addCommand( GCODE_RECORD_STOP,   &uart_record );
@@ -92,7 +93,9 @@ void uart_setRPM(char *cmd, char *data){
     stepper.setRPM(velocity);
   else if( !strcmp(cmd, GCODE_CONTINUOUS_CC ))
     stepper.setRPM(-velocity);
-
+  else
+    stepper.setRPM(0);
+    
   comm.send("OK");
 }
 
@@ -118,6 +121,28 @@ void uart_setbrake(char *cmd, char *data){
 }
 
 void uart_config(char *cmd, char *data){
+  float value = 0.0;
+
+  // If no value can be extracted dont change config
+  if( comm.value("A", &value) ){
+    if( !strcmp(cmd, GCODE_SET_SPEED))
+      stepper.setMaxVelocity( value );
+    else if( !strcmp(cmd, GCODE_SET_ACCEL)){
+      stepper.setMaxAcceleration( value );
+      stepper.setMaxDeceleration( value );
+    }
+  }
+}
+
+void uart_setClosedLoop(char *cmd, char *data){
+  Serial.println(data);
+  if( !strcmp(cmd, GCODE_SET_CL_ENABLE)){
+    stepper.enableClosedLoop();
+    Serial.println("ENABLE");
+  }else if( !strcmp(cmd, GCODE_SET_CL_DISABLE)){
+    stepper.disableClosedLoop();  
+    Serial.println("DISABLE");
+  }
 }
 
 void uart_sendData(char *cmd, char *data){
