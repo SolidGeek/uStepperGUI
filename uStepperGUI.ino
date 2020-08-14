@@ -32,9 +32,8 @@ void setup() {
   
   // Add GCode commands
   comm.addCommand( GCODE_MOVE,            &uart_move ); 
-  comm.addCommand( GCODE_MOVE_CC,         &uart_move ); 
+  comm.addCommand( GCODE_MOVETO,          &uart_moveto ); 
   comm.addCommand( GCODE_CONTINUOUS,      &uart_setRPM ); 
-  comm.addCommand( GCODE_CONTINUOUS_CC,   &uart_setRPM ); 
   comm.addCommand( GCODE_BRAKE,           &uart_setRPM ); 
   comm.addCommand( GCODE_HOME,            &uart_home );
 
@@ -92,11 +91,21 @@ void uart_move(char *cmd, char *data){
   
   if( !strcmp(cmd, GCODE_MOVE ))
     stepper.moveSteps(steps); 
-  else if( !strcmp(cmd, GCODE_MOVE_CC ))
-    stepper.moveSteps(-steps); 
 
   comm.send("OK");
 }
+
+void uart_moveto(char *cmd, char *data){
+  
+  float angle = 0.0;
+  comm.value("A", &angle);
+  
+  if( !strcmp(cmd, GCODE_MOVETO ))
+    stepper.moveToAngle(angle); 
+
+  comm.send("OK");
+}
+
 
 void uart_setRPM(char *cmd, char *data){
   float velocity = 0.0;
@@ -104,8 +113,6 @@ void uart_setRPM(char *cmd, char *data){
 
   if( !strcmp(cmd, GCODE_CONTINUOUS ))
     stepper.setRPM(velocity);
-  else if( !strcmp(cmd, GCODE_CONTINUOUS_CC ))
-    stepper.setRPM(-velocity);
   else
     stepper.setRPM(0);
     

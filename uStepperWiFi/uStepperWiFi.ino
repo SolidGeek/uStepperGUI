@@ -96,11 +96,15 @@ void uart_default(char *cmd, char *data){
   webcomm.send(data);
 }
 
-void uart_processData(char *cmd, char *data){
-  comm.value("A", &tlm_data.angle);
-  comm.value("S", &tlm_data.steps);
-  comm.value("V", &tlm_data.velocity);
 
+void uart_processData(char *cmd, char *data){
+  // Remove "DATA" from string (such that A isn't found prematurely)
+  char * values = data + strlen(cmd);
+  
+  comm.value("A", &tlm_data.angle, values);
+  comm.value("S", &tlm_data.steps, values);
+  comm.value("V", &tlm_data.velocity, values);
+  
   // Send data along to webapp
   webcomm.send(data);
 }
@@ -213,9 +217,10 @@ void playNextLine( void ){
     
     char command[100] = {'\0'};
     
-    strcat(command, "G1 ");
+    strcat(command, GCODE_MOVETO);
+    strcat(command, " ");
     strcat(command, buf);
-    strcat(command, " F10.0"); // Set feedrate to 10mm/s 
+    // strcat(command, " *255"); // Append checksum
 
     // For debugging
     websocket.broadcastTXT("Playing line " + String(recordLineCount) + ": " + String(command));

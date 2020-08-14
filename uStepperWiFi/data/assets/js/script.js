@@ -9,11 +9,10 @@ const DEGREES_PER_REV = 360;
 
 // Move commands
 const GCODE_MOVE 			= "G0";
-const GCODE_MOVE_CC 		= "G1";
+const GCODE_MOVETO 			= "G1";
 const GCODE_CONTINUOUS 		= "G2";
-const GCODE_CONTINUOUS_CC 	= "G3";
-const GCODE_BRAKE 			= "G4";
-const GCODE_HOME 			= "G5";
+const GCODE_BRAKE 			= "G3";
+const GCODE_HOME 			= "G4";
 
 // Miscellaneous commands
 const GCODE_STOP 			= "M0"; // Stop everything
@@ -320,7 +319,7 @@ moveCWBtn.onclick = function(){
 	else
 		step = Math.round(moveInput.value * MICROSTEPS);
 
-	sendCommand( GCODE_MOVE, [{name: "A", value: Math.abs(step)}] );
+	sendCommand( GCODE_MOVE, [{name: "A", value: step}] );
 
 }
 
@@ -333,7 +332,7 @@ moveCCWBtn.onclick = function(){
 	else
 		step = Math.round(moveInput.value * MICROSTEPS);
 
-	sendCommand( GCODE_MOVE_CC, [{name: "A", value: Math.abs(step)}] );
+	sendCommand( GCODE_MOVE, [{name: "A", value: -step}] );
 
 }
 
@@ -376,10 +375,9 @@ var websocketInterval = function() {
 				velocity = joystickControl();
 
 				if(velocity != lastVelocity){
-					if( velocity > 0 )
-						sendCommand( GCODE_CONTINUOUS, [{name: "A", value: Math.abs(velocity)}] );
-					else
-						sendCommand( GCODE_CONTINUOUS_CC, [{name: "A", value: Math.abs(velocity)}] );
+					
+					sendCommand( GCODE_CONTINUOUS, [{name: "A", value: velocity}] );
+					
 				}
 
 				lastVelocity = velocity;

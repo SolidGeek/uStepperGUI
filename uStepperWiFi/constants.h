@@ -1,9 +1,8 @@
 #define GCODE_MOVE 				"G0"
-#define GCODE_MOVE_CC 			"G1"
+#define GCODE_MOVETO            "G1"
 #define GCODE_CONTINUOUS 		"G2"
-#define GCODE_CONTINUOUS_CC 	"G3"
-#define GCODE_BRAKE 			"G4"
-#define GCODE_HOME 				"G5"
+#define GCODE_BRAKE 			"G3"
+#define GCODE_HOME 				"G4"
 
 // Miscellaneous commands
 #define GCODE_STOP 				"M0" // Stop everything
