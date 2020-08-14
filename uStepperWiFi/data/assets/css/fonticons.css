@@ -1,11 +1,6 @@
 @font-face {
   font-family: 'fonticons';
-  src: url('../font/fonticons.eot?5693570');
-  src: url('../font/fonticons.eot?5693570#iefix') format('embedded-opentype'),
-       url('../font/fonticons.woff2?5693570') format('woff2'),
-       url('../font/fonticons.woff?5693570') format('woff'),
-       url('../font/fonticons.ttf?5693570') format('truetype'),
-       url('../font/fonticons.svg?5693570#fonticons') format('svg');
+  src: url('../font/fonticons.ttf?31199998') format('truetype');
   font-weight: normal;
   font-style: normal;
 }
@@ -15,7 +10,7 @@
 @media screen and (-webkit-min-device-pixel-ratio:0) {
   @font-face {
     font-family: 'fonticons';
-    src: url('../font/fonticons.svg?5693570#fonticons') format('svg');
+    src: url('../font/fonticons.svg?31199998#fonticons') format('svg');
   }
 }
 */
@@ -66,5 +61,5 @@
 .icon-plus:before { content: '\e808'; } /* '' */
 .icon-minus:before { content: '\e809'; } /* '' */
 .icon-circle:before { content: '\f111'; } /* '' */
-.icon-direction:before { content: '\f124'; } /* '' */
 .icon-up:before { content: '\f176'; } /* '' */
+.icon-wifi:before { content: '\f1eb'; } /* '' */

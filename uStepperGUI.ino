@@ -8,13 +8,25 @@
 uStepperS stepper;
 GCode comm;
 
+// Used to keep track of configuration
+struct{
+  float acceleration = 2000.0;  // In steps/s
+  float velocity = 200.0;     // In steps/s = 60 RPM
+  uint8_t brake = COOLBRAKE;
+  boolean closedLoop = false;
+} conf;
+
 void setup() {
 
   DEBUGPORT.begin(115200);
   UARTPORT.begin(115200);
   
-  stepper.setup();
-  stepper.setMaxVelocity(100.0);
+  stepper.setup(CLOSEDLOOP,200);
+  stepper.disableClosedLoop();
+
+  stepper.setMaxAcceleration( conf.acceleration );
+  stepper.setMaxDeceleration( conf.acceleration );
+  stepper.setMaxVelocity( conf.velocity  );
 
   comm.setSendFunc(&uart_send);
   
@@ -42,7 +54,8 @@ void setup() {
   comm.addCommand( GCODE_RECORD_PAUSE,  &uart_record );
   
   comm.addCommand( GCODE_REQUEST_DATA,    &uart_sendData );
-
+  comm.addCommand( GCODE_REQUEST_CONFIG,  &uart_sendConfig );
+  
   // Called if the packet and checksum is ok, but the command is unsupported
   comm.addCommand( NULL, uart_default );
 
@@ -74,7 +87,7 @@ void uart_default(char * cmd, char *data){
 }
 
 void uart_move(char *cmd, char *data){
-  int steps = 0;
+  int32_t steps = 0;
   comm.value("A", &steps);
   
   if( !strcmp(cmd, GCODE_MOVE ))
@@ -111,12 +124,16 @@ void uart_stop(char *cmd, char *data){
 }
 
 void uart_setbrake(char *cmd, char *data){
-  if( !strcmp(cmd, GCODE_SET_BRAKE_FREE ))
+  if( !strcmp(cmd, GCODE_SET_BRAKE_FREE )){
     stepper.setBrakeMode(FREEWHEELBRAKE);
-  else if( !strcmp(cmd, GCODE_SET_BRAKE_COOL ))
+    conf.brake = FREEWHEELBRAKE;
+  }else if( !strcmp(cmd, GCODE_SET_BRAKE_COOL )){
     stepper.setBrakeMode(COOLBRAKE);
-  else if( !strcmp(cmd, GCODE_SET_BRAKE_HARD ))
+    conf.brake = COOLBRAKE;
+  }else if( !strcmp(cmd, GCODE_SET_BRAKE_HARD )){
     stepper.setBrakeMode(HARDBRAKE);
+    conf.brake = HARDBRAKE;
+  }
   comm.send("OK");
 }
 
@@ -125,39 +142,59 @@ void uart_config(char *cmd, char *data){
 
   // If no value can be extracted dont change config
   if( comm.value("A", &value) ){
-    if( !strcmp(cmd, GCODE_SET_SPEED))
+    if( !strcmp(cmd, GCODE_SET_SPEED)){
       stepper.setMaxVelocity( value );
-    else if( !strcmp(cmd, GCODE_SET_ACCEL)){
+      conf.velocity = value;
+    }else if( !strcmp(cmd, GCODE_SET_ACCEL)){
       stepper.setMaxAcceleration( value );
       stepper.setMaxDeceleration( value );
+      conf.acceleration = value;
     }
   }
 }
 
 void uart_setClosedLoop(char *cmd, char *data){
-  Serial.println(data);
   if( !strcmp(cmd, GCODE_SET_CL_ENABLE)){
+    stepper.moveSteps(0); // Set target position
     stepper.enableClosedLoop();
-    Serial.println("ENABLE");
+    conf.closedLoop = true;
   }else if( !strcmp(cmd, GCODE_SET_CL_DISABLE)){
-    stepper.disableClosedLoop();  
-    Serial.println("DISABLE");
+    stepper.disableClosedLoop();
+    conf.closedLoop = false;  
   }
 }
 
 void uart_sendData(char *cmd, char *data){
   char buf[50] = {'\0'};
   char strAngle[10] = {'\0'};
-  char strVelocity[10] = {'\0'};
-  
+  char strRPM[10] = {'\0'};
+  char strDriverRPM[10] = {'\0'};
+
+  int32_t steps = stepper.driver.getPosition();
   float angle = stepper.angleMoved();
-  float velocity = stepper.encoder.getRPM();
+  float RPM = stepper.encoder.getRPM();
+  float driverRPM = stepper.getDriverRPM();
   
   dtostrf(angle, 4, 2, strAngle);
-  dtostrf(velocity, 4, 2, strVelocity);
+  dtostrf(RPM, 4, 2, strRPM);
+  dtostrf(driverRPM, 4, 2, strDriverRPM);
   
   strcat(buf, "DATA ");
-  sprintf(buf + strlen(buf), "A%s V%s", strAngle, strVelocity);
+  sprintf(buf + strlen(buf), "A%s S%ld V%s D%s", strAngle, steps, strRPM, strDriverRPM);
+
+  comm.send(buf);
+}
+
+void uart_sendConfig(char *cmd, char *data){
+  char buf[50] = {'\0'};
+  char strVel[10] = {'\0'};
+  char strAccel[10] = {'\0'};
+
+  dtostrf(conf.velocity, 4, 2, strVel);
+  dtostrf(conf.acceleration, 4, 2, strAccel);
+  
+  strcat(buf, "CONF ");
+  sprintf(buf + strlen(buf), "V%s A%s B%d C%d", strVel, strAccel, conf.brake, conf.closedLoop);
 
   comm.send(buf);
 }

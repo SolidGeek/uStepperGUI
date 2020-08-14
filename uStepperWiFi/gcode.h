@@ -42,9 +42,9 @@ class GCode {
 
 		/** Extract value from the packet, f.x. X10.0 */
 		bool value(char *name, float *var);
-		bool value(char *name, int *var);
+		bool value(char *name, int32_t *var);
 		bool value(char *name, float *var, char *packet);
-		bool value(char *name, int *var, char *packet);
+		bool value(char *name, int32_t *var, char *packet);
 
 		/** Check if packet contains a specific command, f.x. G0 */
 		bool check(char *cmd);

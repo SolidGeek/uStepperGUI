@@ -33,7 +33,8 @@ char recordPath[]         = "/recording.txt";
 
 struct{
   float angle = 0.0;
-  int32_t velocity = 0;
+  float velocity = 0.0;
+  int32_t steps = 0;
 } tlm_data;
 
 void setup() {
@@ -97,6 +98,7 @@ void uart_default(char *cmd, char *data){
 
 void uart_processData(char *cmd, char *data){
   comm.value("A", &tlm_data.angle);
+  comm.value("S", &tlm_data.steps);
   comm.value("V", &tlm_data.velocity);
 
   // Send data along to webapp
@@ -128,7 +130,7 @@ void web_addLine(char *cmd, char *data){
   char tempAngle[10] = {'\0'};
 
   dtostrf(tlm_data.angle, 4, 2, tempAngle);
-  sprintf(buf, "A%s V%d", tempAngle, tlm_data.velocity);
+  sprintf(buf, "A%s", tempAngle);
   
   saveData(buf);
 }

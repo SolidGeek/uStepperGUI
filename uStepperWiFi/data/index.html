@@ -15,10 +15,15 @@
 				<h1><b style="font-family:cooper black;">uStepper</b> GUI</h1>
 			</div>	
 
-			<div id="topbar" class="d-flex">
-				<div id="comm-status">
-					<i class="icon-signal"></i>			
-					<span>Status</span>
+			<div id="topbar">
+				<div id="comm-status" class="d-flex">
+					<div class="icon">
+						<i class="icon-wifi"></i>
+					</div>
+
+					<span>Connecting...</span>
+				
+					<div id="loader" class="loader ml-2"></div>
 				</div>
 			</div>
 		</div>
@@ -54,7 +59,7 @@
 									<div class="input-group-prepend">
 										<button class="btn btn-secondary" type="button" id="moveCCWBtn"><i class="icon-minus"></i></button>
 									</div>
-									<div class="input-unit unit-degree">
+									<div id="moveInputWrapper" class="input-unit unit-degree">
 										<input type="number" class="form-control" id="moveInput" value="45">
 									</div>
 									<div class="input-group-append">
@@ -114,7 +119,85 @@
 							</div>
 							<div class="card-body">
 								
-								<label>Position</label>
+
+								<table class="table table-sm">
+										
+									<tr>
+										<th></th>
+										<th><span class="title">Encoder</span></th>
+										<th><span class="title">Driver</span></th>
+									</tr>
+
+									<tr>
+										<td>
+											Position
+										</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<div class="input-group-prepend">
+													<span class="input-group-text"><div id="anglePointer"><i class="icon-up"></i></div></span>
+												</div>		
+												<input type="text" id="dataPosition" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text positionUnit">°</span>
+												</div>	
+											</div>
+										</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="text" id="dataPositionDriver" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text positionUnit">°</span>
+												</div>
+											</div>
+										</td>
+									</tr>
+
+									<tr>
+										<td>
+											Abs
+										</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="text" id="dataAbsPosition" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text positionUnit">°</span>
+												</div>
+											</div>
+										</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="text" id="dataAbsPositionDriver" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text positionUnit">°</span>
+												</div>
+											</div>
+										</td>
+									</tr>
+
+									<tr>
+										<td>Velocity</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="text" id="dataVelocity" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text">rpm</span>
+												</div>
+											</div>
+										</td>
+										<td>
+											<div class="input-group input-group-sm">
+												<input type="text" id="dataVelocityDriver" class="form-control text-right" disabled value="0.00">
+												<div class="input-group-append">
+													<span class="input-group-text">rpm</span>
+												</div>
+											</div>
+										</td>
+									</tr>
+
+								</table>
+
+								<!-- <label>Position</label>
 								<div class="input-group input-group-sm mb-3">
 									<div class="input-group-prepend">
 										<span class="input-group-text"><div id="anglePointer"><i class="icon-up"></i></div></span>
@@ -140,7 +223,7 @@
 									<div class="input-group-append">
 										<span class="input-group-text" id="basic-addon2">rpm</span>
 									</div>									
-								</div>
+								</div>-->
 
 							</div>
 						</div>
@@ -153,92 +236,109 @@
 							</div>
 							
 							<div class="card-body">
+
+
 								<table class="table table-sm">
 
-									<tr>
-										<td>Position Unit</td>
-										<td>
-											<div class="form-check">
-												<input class="form-check-input" type="radio" name="unit" id="unit-1" value="degress" checked>
-												<label class="form-check-label" for="unit-1">
-												Degress
-												</label>
-											</div>
-											<div class="form-check">
-												<input class="form-check-input" type="radio" name="unit" id="unit-2" value="steps">
-												<label class="form-check-label" for="unit-2">
-												Steps
-												</label>
-											</div>
+									<thead>
+										<tr>
+											<th colspan="2"><span class="title">GUI</span></th>
+										</tr>
+									</thead>
+
+									<tbody>
+										<tr>
+											<td>Position Unit</td>
+											<td>
+												<div class="form-check">
+													<input class="form-check-input" type="radio" name="unit" id="unit-1" value="degress" checked>
+													<label class="form-check-label" for="unit-1">
+													Degress
+													</label>
+												</div>
+												<div class="form-check">
+													<input class="form-check-input" type="radio" name="unit" id="unit-2" value="steps">
+													<label class="form-check-label" for="unit-2">
+													Steps
+													</label>
+												</div>
+												
 											
+												</div>
+											</td>
+										</tr>
+									</tbody>
+
+									<thead>
+										<tr>
+											<th colspan="2"><span class="title">Stepper</span></th>
+										</tr>
+									</thead>
+
+									<tbody>
+										<tr>
+											<td>Velocity</td>
+											<td>
+												<div class="input-group input-group-sm">
+													<input type="number" class="form-control" id="velocityInput" title="Max motor velocity">
+													<select class="custom-select" id="velocityUnit">
+														<option value="rpm" selected>rpm</option>
+														<option value="step">step/s</option>
+													</select>
+												</div>
+											</td>
+										</tr>
+
+										<tr>
+											<td>Acceleration:</td>
+											<td>
+												<div class="input-group input-group-sm">
+													<input type="number" class="form-control" id="accelerationInput" title="Max motor accelation">
+													<select class="custom-select">
+														<option value="rpm" selected>rpm/s</option>
+														<option value="step">step/s^2</option>
+													</select>
+												</div>
+											</td>
+										</tr>
 										
-											</div>
-										</td>
-									</tr>
-
-									<tr>
-										<td>Velocity</td>
-										<td>
-											<div class="input-group input-group-sm">
-												<input type="number" class="form-control" value="100" id="velocityInput" title="Max motor velocity">
-												<select class="custom-select">
-													<option selected>rpm</option>
-													<option value="1">step/s</option>
-												</select>
-											</div>
-										</td>
-									</tr>
-
-									<tr>
-										<td>Acceleration:</td>
-										<td>
-											<div class="input-group input-group-sm">
-												<input type="number" class="form-control" value="10" id="maxFeedrate" title="Maximum speed">
-												<select class="custom-select">
-													<option selected>rpm/s</option>
-													<option value="1">step/s^2</option>
-												</select>
-											</div>
-										</td>
-									</tr>
-									
-									<tr>
-										<td>Brake method:</td>
-										<td>
-											<div class="form-check">
-												<input class="form-check-input" type="radio" name="brake" id="brake-1" value="free">
-												<label class="form-check-label" for="brake-1">
-												Free Wheel
-												</label>
-											</div>
-											<div class="form-check">
-												<input class="form-check-input" type="radio" name="brake" id="brake-2" value="cool" checked>
-												<label class="form-check-label" for="brake-2">
-												Cool
-												</label>
-											</div>
-											<div class="form-check">
-												<input class="form-check-input" type="radio" name="brake" id="brake-3" value="hard">
-												<label class="form-check-label" for="brake-3">
-												Hard
-												</label>
-											</div>
+										<tr>
+											<td>Brake method:</td>
+											<td>
+												<div class="form-check">
+													<input class="form-check-input" type="radio" name="brake" id="brake-1" value="free">
+													<label class="form-check-label" for="brake-1">
+													Free Wheel
+													</label>
+												</div>
+												<div class="form-check">
+													<input class="form-check-input" type="radio" name="brake" id="brake-2" value="cool" checked>
+													<label class="form-check-label" for="brake-2">
+													Cool
+													</label>
+												</div>
+												<div class="form-check">
+													<input class="form-check-input" type="radio" name="brake" id="brake-3" value="hard">
+													<label class="form-check-label" for="brake-3">
+													Hard
+													</label>
+												</div>
+											
+												</div>
+											</td>
+										</tr>
 										
-											</div>
-										</td>
-									</tr>
-									
-									<tr>
-										<td>Closed loop:</td>
-										<td>
-											<label class="switch">
-												<input type="checkbox" id="closedLoopCheck">
-												<span class="slider round"></span>
-											</label>
-										</td>
-									</tr>
-
-									
+										<tr>
+											<td>Closed loop:</td>
+											<td>
+												<label class="switch">
+													<input type="checkbox" id="closedLoopCheck">
+													<span class="slider round"></span>
+												</label>
+											</td>
+										</tr>
+									</tbody>
+										
 								</table>
 
 							</div>

@@ -39,10 +39,10 @@ header #comm-status{
     font-weight: bold;
 }
 
-header #comm-status img{
-    height: 30px;
-    width: 30px;
-    margin-right: 10px;
+header #comm-status .icon{
+    padding: 8px 10px 8px 0;
+    border-right: 1px solid #333;
+    margin: -8px 10px -8px 0;
 }
 
 label{
@@ -322,8 +322,19 @@ input:checked + .slider:before {
     box-shadow: inset 0px 0px 20px 5px rgba(0, 0, 0, 0.7);
 }
 
+.title{
+    color: #a6c5ff;
+    text-transform: uppercase;
+    font-size: 13px;
+    font-weight: 700;
+}
+
 .card{
     background-color: #232528;
+}
+
+.card-header{
+  color: #fff;
 }
 
 .card-body .table{
@@ -332,6 +343,26 @@ input:checked + .slider:before {
 
 .card-body .table td, .card-body  .table th {
     border-top: none;
+}
+
+.card-body .table thead th {
+    border-bottom: 1px solid #1e1f22;
+}
+
+.card-body .table tr td:first-child, .card-body .table tr th:first-child {
+    padding-left: 0px;
+}
+
+.card-body .table tr td:last-child, .card-body .table tr th:last-child {
+    padding-right: 0px;
+}
+
+.card-body .table thead tr th{
+    padding-bottom: 10px;
+}
+
+.card-body .table tbody tr:first-child td{
+    padding-top: 10px;
 }
 
 .btn-icon{
@@ -431,4 +462,28 @@ input[type=range].input-range:focus::-webkit-slider-runnable-track {
     font-size: 1.25rem;
     line-height: 1.5;
     border-radius: 0px;
+}
+
+.loader {
+    border: 4px solid #2f3135;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    animation: spin 0.8s linear infinite;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.card-header .loader{
+  position: absolute;
+  top: 12px;
+  right: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }

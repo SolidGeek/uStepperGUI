@@ -5,6 +5,7 @@
 const FULLSTEPS = 200;
 const MICROSTEPS = 256;
 const STEPS_PER_REV = FULLSTEPS * MICROSTEPS;
+const DEGREES_PER_REV = 360;
 
 // Move commands
 const GCODE_MOVE 			= "G0";
@@ -30,6 +31,7 @@ const GCODE_RECORD_ADD 		= "M12";
 const GCODE_RECORD_PLAY 	= "M13";
 const GCODE_RECORD_PAUSE 	= "M14";
 const GCODE_REQUEST_DATA 	= "M15";
+const GCODE_REQUEST_CONFIG	= "M16";
 
 
 const APP_UNIT_DEGREES = 0;
@@ -47,8 +49,18 @@ var websocket;
 // Telemetry returned from device
 var tlm = {
 	position: 0.0,
-	total: 0.0, 
-	velocity: 0.0, 
+	absPosition: 0.0, 
+	steps: 0, // Steps directly from driver
+	absSteps: 0,
+	encoderVelocity: 0.0, 
+	driverVelocity: 0.0,
+};
+
+var conf = {
+	velocity: 0.0,
+	acceleration: 0.0,
+	brake: 0,
+	closedLoop: 0
 };
 
 // Flag telling if a sequence is being recorded
@@ -60,7 +72,7 @@ var commandAck = false;
 // Keeping track of numbers of commands sent
 var commandsSend = 0;
 
-var initPosition = true; // SHOULD BE FALSE
+var initConfig = false;
 var websocketCnt = 0;
 var silenceWebsocket = 0;
 
@@ -83,34 +95,56 @@ var emergencyBtn	= document.getElementById('emergencyBtn');
 var linesElement	= document.getElementById('lines');
 var recordingElement = document.getElementById('recording');
 
-var dataPositionElm	= document.getElementById('dataPosition');
-var dataTotalElm	= document.getElementById('dataTotal');
-var dataVelocityElm	= document.getElementById('dataVelocity');
+var dataPositionElm		= document.getElementById('dataPosition');
+var dataAbsPositionElm 	= document.getElementById('dataAbsPosition');
+var dataVelocityElm		= document.getElementById('dataVelocity');
 
-var velocityInput 	= document.getElementById('velocityInput');
-var moveInput 		= document.getElementById('moveInput');
-var moveCWBtn 		= document.getElementById('moveCWBtn');
-var moveCCWBtn 		= document.getElementById('moveCCWBtn');
-var anglePointer 	= document.getElementById('anglePointer');
-var closedLoopCheck = document.getElementById('closedLoopCheck');
+var dataPositionDriverElm		= document.getElementById('dataPositionDriver');
+var dataAbsPositionDriverElm	= document.getElementById('dataAbsPositionDriver');
+var dataVelocityDriverElm		= document.getElementById('dataVelocityDriver');
 
-var unitsRadios = document.getElementsByName('brake'); 
+var velocityInput 		= document.getElementById('velocityInput');
+var accelerationInput 	= document.getElementById('accelerationInput');
+var moveInput 			= document.getElementById('moveInput');
+var moveCWBtn 			= document.getElementById('moveCWBtn');
+var moveCCWBtn 			= document.getElementById('moveCCWBtn');
+var anglePointer 		= document.getElementById('anglePointer');
+var closedLoopCheck 	= document.getElementById('closedLoopCheck');
+
+var unitsRadios = document.getElementsByName('unit'); 
 var brakeRadios = document.getElementsByName('brake'); 
+
+var positionUnitElm = document.getElementsByClassName('positionUnit');
+
+var loaderElm = document.getElementById('loader');
 
 
 
 for (var i = 0; i < unitsRadios.length; i++) {
 	unitsRadios[i].addEventListener('change', function(event) {
 		var value = event.target.value;
+		var moveunit = document.getElementById('moveInputWrapper');
+
+		var string = "";
 
 		switch( value ){
-			case "degrees":
+			case "degress":
 				positionUnit = APP_UNIT_DEGREES;
+				moveunit.classList.remove('unit-step');
+				moveunit.classList.add('unit-degree');
+				string = "°";
 			break;
 
 			case "steps":
 				positionUnit = APP_UNIT_STEPS;
+				moveunit.classList.remove('unit-degree');
+				moveunit.classList.add('unit-step');
+				string = "steps";
 			break;
+		}
+
+		for (var i = 0; i < positionUnitElm.length; i++) {
+			positionUnitElm[i].innerHTML = string;
 		}
 	});
 }
@@ -149,8 +183,8 @@ window.onload = function(){
 			initWebSocket();
 		}
 
-		if( ! initPosition ){
-			sendCommand( GCODE_REQUEST_DATA );
+		if( ! initConfig ){
+			sendCommand( GCODE_REQUEST_CONFIG );
 		}
 
 		requestRecording();
@@ -279,14 +313,26 @@ emergencyBtn.onclick = function(){
 
 moveCWBtn.onclick = function(){
 
-	var step = moveInput.value * (STEPS_PER_REV/360.0);
+	var step = 0;
+
+	if( positionUnit == APP_UNIT_DEGREES)
+		step = Math.round(moveInput.value * (STEPS_PER_REV/360.0));
+	else
+		step = Math.round(moveInput.value * MICROSTEPS);
+
 	sendCommand( GCODE_MOVE, [{name: "A", value: Math.abs(step)}] );
 
 }
 
 moveCCWBtn.onclick = function(){
 
-	var step = moveInput.value * (STEPS_PER_REV/360.0);
+	var step = 0;
+
+	if( positionUnit == APP_UNIT_DEGREES)
+		step = Math.round(moveInput.value * (STEPS_PER_REV/360.0));
+	else
+		step = Math.round(moveInput.value * MICROSTEPS);
+
 	sendCommand( GCODE_MOVE_CC, [{name: "A", value: Math.abs(step)}] );
 
 }
@@ -324,7 +370,7 @@ var websocketInterval = function() {
     // If a connection is established
 	if(websocket.readyState == 1){
 		// If the initial position is received
-		if( initPosition ){
+		if( initConfig ){
 			// Toggle between control command and telemetry
 			if(websocketCnt === 0){
 				velocity = joystickControl();
@@ -378,8 +424,10 @@ function initWebSocket(){
 	// Initiate the websocket object
 	websocket = new WebSocket('ws://192.168.4.1:81/');
 
-	addToLog("Connecting...");
-	setStatus("Connecting...", "primary")
+	initConfig = false;
+	loaderElm.classList.remove('hidden');
+	addToLog("Connecting");
+	setStatus("Connecting", "primary")
 
 	// Add eventlisteners for handling communication with ESP
 	websocket.onopen = function(event) { onWsOpen(event) };
@@ -418,8 +466,10 @@ function onWsOpen(event) {
 	addToLog("Websocket connection established");
 	setStatus("Connected", "success");
 
-	// When connection first is opened, request current position
-	sendCommand( GCODE_REQUEST_DATA );
+	loaderElm.classList.add('hidden');
+
+	// When connection first is opened, request configuration
+	sendCommand( GCODE_REQUEST_CONFIG );
 }
 
 function onWsClose(event) {
@@ -430,15 +480,14 @@ function onWsClose(event) {
 // Whenever a message is received from the ESP
 function onWsMessage(event) {
 	var data = event.data;
-	
+
 	if( data.includes("OK")) {
 		// Please send new command 
 		commandAck = true;
 
 	} else if( data.includes("DATA") ){
-
 		var values = [];
-		// Read data about position and update current positions
+
 		var items = data.split(" ");
 		items.shift(); // Remove "DATA" from string
 
@@ -447,20 +496,58 @@ function onWsMessage(event) {
 	    	values[i] = items[i].substring(1, items[i].length);
 		}
 
-		tlm.posistion 	= parseFloat(values[0])%360;
-		tlm.total 		= parseFloat(values[0]);
-		tlm.velocity 	= parseFloat(values[1]);
 
-		if(initPosition != true){
-			addToLog( "Position received" );
+		tlm.posistion 		= parseFloat(values[0])%DEGREES_PER_REV;
+		tlm.absPosition 	= parseFloat(values[0]);
+		tlm.steps 			= parseInt(values[1])%STEPS_PER_REV;
+		tlm.absSteps		= parseInt(values[1]);
+		tlm.encoderVelocity = parseFloat(values[2]);
+		tlm.driverVelocity 	= parseFloat(values[3]);
+
+		// Print values to GUI
+		if( positionUnit == APP_UNIT_DEGREES ){
+			dataPositionElm.value 			= tlm.posistion.toFixed(2);
+			dataAbsPositionElm.value 		= tlm.absPosition.toFixed(2);
+			dataPositionDriverElm.value 	= (tlm.steps/STEPS_PER_REV*DEGREES_PER_REV).toFixed(2); 	// Convert microsteps to angle
+			dataAbsPositionDriverElm.value 	= (tlm.absSteps/STEPS_PER_REV*DEGREES_PER_REV).toFixed(2); 	// Convert microsteps to angle
+		}else{
+			dataPositionElm.value 			= (tlm.posistion.toFixed(2)/DEGREES_PER_REV*FULLSTEPS).toFixed(2); 	// Convert angle to steps
+			dataAbsPositionElm.value 		= (tlm.absPosition.toFixed(2)/DEGREES_PER_REV*FULLSTEPS).toFixed(2); // Convert angle to steps
+			dataPositionDriverElm.value 	= (tlm.steps/MICROSTEPS).toFixed(2);
+			dataAbsPositionDriverElm.value 	= (tlm.absSteps/MICROSTEPS).toFixed(2);
 		}
 
-		initPosition = true;
-		
-		anglePointer.style.transform = 'rotate('+tlm.posistion+'deg)';
-		dataPositionElm.value 	= tlm.posistion.toFixed(2);
-		dataTotalElm.value 		= tlm.total.toFixed(2);
-		dataVelocityElm.value 	= tlm.velocity.toFixed(2);
+		dataVelocityElm.value 			= tlm.encoderVelocity.toFixed(2);
+		dataVelocityDriverElm.value 	= tlm.driverVelocity.toFixed(2);
+
+		// Animate arrow to show position
+		anglePointer.style.transform 	= 'rotate('+tlm.posistion+'deg)';
+	}
+	else if(data.includes("CONF")){
+		var values = [];
+
+		var items = data.split(" ");
+		items.shift(); // Remove "CONF" from string
+
+		for (var i in items) {
+			// Remove the prefix of each datastring
+	    	values[i] = items[i].substring(1, items[i].length);
+		}
+
+		conf.velocity 		= parseFloat(values[0]);
+		conf.acceleration 	= parseFloat(values[1]);
+		conf.brakeMethod 	= parseInt(values[2]);
+		conf.closedLoop 	= parseInt(values[3]);
+
+		velocityInput.value = conf.velocity/FULLSTEPS*60.0; // Get it as RPM
+		accelerationInput.value = conf.acceleration/FULLSTEPS*60.0; // Get it as RPM/s
+
+
+		if(initConfig != true){
+			addToLog( "Config received" );
+		}
+
+		initConfig = true;
 	}
 	else if(data.includes("DONE"))
 	{	
@@ -486,8 +573,6 @@ function addToLog( data ){
 }
 
 function setStatus( text, type ){
-	statusBar.className = type;
-
 	textArea = statusBar.getElementsByTagName('span')[0];
 	textArea.innerHTML = text;
 }

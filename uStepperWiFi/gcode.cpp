@@ -133,17 +133,17 @@ bool GCode::value(char *name, float *var) {
 	return this->value(name, var, this->packet);
 }
 
-bool GCode::value(char *name, int *var) {
+bool GCode::value(char *name, int32_t *var) {
 	// If no packet is supplied, work on the latests in buffer
 	return this->value(name, var, this->packet);
 }
 
-bool GCode::value(char *name, int *var, char *packet ){
+bool GCode::value(char *name, int32_t *var, char *packet ){
 	float temp = 0.0;
 
 	this->value(name, &temp, packet );
 
-	*var = (int)temp;
+	*var = (int32_t)temp;
 }
 
 bool GCode::value(char *name, float *var, char *packet ) {
