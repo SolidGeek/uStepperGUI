@@ -36,10 +36,9 @@ const GCODE_REQUEST_CONFIG	= "M16";
 const APP_UNIT_DEGREES = 0;
 const APP_UNIT_STEPS = 1;
 
-// Min interval in ms between each command (not guaranteed)
-const wsInterval = 50;
-// Address to upload
-const fileUploadURL = "/upload";
+
+const wsInterval = 100; 				// Min interval in ms between each command (not guaranteed)
+const fileUploadURL = "/upload"; 	// Address to upload
 
 
 // Websocket object to be used
@@ -47,9 +46,9 @@ var websocket;
 
 // Telemetry returned from device
 var tlm = {
-	position: 0.0,
+	position: 0.0, 		// Angle from encoder
 	absPosition: 0.0, 
-	steps: 0, // Steps directly from driver
+	steps: 0, 			// Steps directly from driver
 	absSteps: 0,
 	encoderVelocity: 0.0, 
 	driverVelocity: 0.0,
@@ -62,26 +61,21 @@ var conf = {
 	closedLoop: 0
 };
 
-// Flag telling if a sequence is being recorded
-var recording = false;
-
-// Flag to check if the last sent command was completed
-var commandAck = false;
-
-// Keeping track of numbers of commands sent
-var commandsSend = 0;
-
-var initConfig = false;
+var recording = false; 			// Flag telling if a sequence is being recorded
+var playingRecording = false;
+var commandAck = false; 		// Flag to check if the last sent command was completed
+var commandsSend = 0; 			// Keeping track of numbers of commands sent
+var requestTlm = false;
+var configRead = false;
 var websocketCnt = 0;
-var silenceWebsocket = 0;
+var lastVelocity = 0.0;
+var currentLinenum = 0;
 
-var lastCommand = "";
 var positionUnit = APP_UNIT_DEGREES;
 
 // Element references to modify DOM
 var statusBar 		= document.getElementById("comm-status");
 var logElement 		= document.getElementById("log");
-var pauseBtn		= document.getElementById('pause');
 var playBtn			= document.getElementById('play');
 var stopBtn			= document.getElementById('stop');
 var recordBtn		= document.getElementById('record');
@@ -93,15 +87,12 @@ var homeBtn			= document.getElementById('homeBtn');
 var emergencyBtn	= document.getElementById('emergencyBtn');
 var linesElement	= document.getElementById('lines');
 var recordingElement = document.getElementById('recording');
-
 var dataPositionElm		= document.getElementById('dataPosition');
 var dataAbsPositionElm 	= document.getElementById('dataAbsPosition');
 var dataVelocityElm		= document.getElementById('dataVelocity');
-
 var dataPositionDriverElm		= document.getElementById('dataPositionDriver');
 var dataAbsPositionDriverElm	= document.getElementById('dataAbsPositionDriver');
 var dataVelocityDriverElm		= document.getElementById('dataVelocityDriver');
-
 var velocityInput 		= document.getElementById('velocityInput');
 var accelerationInput 	= document.getElementById('accelerationInput');
 var moveInput 			= document.getElementById('moveInput');
@@ -109,16 +100,12 @@ var moveCWBtn 			= document.getElementById('moveCWBtn');
 var moveCCWBtn 			= document.getElementById('moveCCWBtn');
 var anglePointer 		= document.getElementById('anglePointer');
 var closedLoopCheck 	= document.getElementById('closedLoopCheck');
-
 var unitsRadios = document.getElementsByName('unit'); 
 var brakeRadios = document.getElementsByName('brake'); 
-
 var positionUnitElm = document.getElementsByClassName('positionUnit');
-
 var loaderElm = document.getElementById('loader');
 
-
-
+// Add events for radio buttons
 for (var i = 0; i < unitsRadios.length; i++) {
 	unitsRadios[i].addEventListener('change', function(event) {
 		var value = event.target.value;
@@ -148,6 +135,7 @@ for (var i = 0; i < unitsRadios.length; i++) {
 	});
 }
 
+// Add events for radio buttons
 for (var i = 0; i < brakeRadios.length; i++) {
 	brakeRadios[i].addEventListener('change', function(event) {
 		var value = event.target.value;
@@ -173,21 +161,21 @@ window.onload = function(){
 	// Initiate the websocket connection
 	initWebSocket();
 
-	// Load previous made recording
-	requestRecording();
-
 	// Always try to reinitiate the Websocket connection
 	setInterval(function() {
 		if( websocket.readyState != 1 ){
 			initWebSocket();
 		}
 
-		if( ! initConfig ){
+		if( ! configRead ){
 			sendCommand( GCODE_REQUEST_CONFIG );
 		}
+	}, 3000);
 
+	// Read the recording 
+	setInterval(function() {
 		requestRecording();
-	}, 3000)
+	}, 250)
 }
 
 // Perform a http request from the browser
@@ -205,7 +193,13 @@ xhttp.onreadystatechange = function(){
 
 		linesElement.innerHTML = '';
 		for(var i = 0;i < lines.length-1;i++){
-		    linesElement.innerHTML += "<span class='linenum'>" + (i+1) + ":</span><span class='line'>" + lines[i] + "</span>";
+
+			var active = '';
+			if( playingRecording && currentLinenum == i ){
+				active = 'active';
+			}
+
+		    linesElement.innerHTML += "<span id='line-"+i+"' class='linenum "+active+"'>" + (i+1) + ":</span><span class='line'>" + lines[i] + "</span>";
 		}
 
 		document.getElementById('record-len').innerHTML = "("+ (lines.length-1) +")";
@@ -265,12 +259,22 @@ uploadFile.onchange = function(){
 
 // Play current recording
 playBtn.onclick  = function(){
-	sendCommand(GCODE_RECORD_PLAY);
+	if( playingRecording ){
+		sendCommand(GCODE_RECORD_PAUSE);
+		playBtn.innerHTML = '<i class="icon-play"></i>';
+	}else{
+		currentLinenum = 0;
+		setTimeout( sendCommand(GCODE_RECORD_PLAY), 500);
+		playBtn.innerHTML = '<i class="icon-pause"></i>';
+	}
+
+	playingRecording = !playingRecording;
 }
 
-// Pause current recording
-pauseBtn.onclick  = function(){
-	sendCommand(GCODE_RECORD_PAUSE);
+stopBtn.onclick = function(){
+	playingRecording = false;
+
+	stopRecording();
 }
 
 // Add the current position/state to the recording
@@ -278,17 +282,18 @@ recordLineBtn.onclick = function(){
 	sendCommand(GCODE_RECORD_ADD);
 
 	// Request recording (update the gui)
-	requestRecording();
+	setTimeout( requestRecording(), 100); // Wait 100ms before reading the recording
 }
 
-// Stop the recording
+// Stop ESP from recording anymore
 function stopRecording()
 {
-	if( recording ){
-		sendCommand( GCODE_RECORD_STOP );
-		recordBtn.style = "color:white";
-		recording = false;
-	}
+	sendCommand( GCODE_RECORD_STOP );
+	
+	playBtn.innerHTML = '<i class="icon-play"></i>';
+	recordBtn.style = "color:white";
+	recording = false;
+	playingRecording = false;	
 }
 
 // Home the device
@@ -298,7 +303,6 @@ homeBtn.onclick = function(){
 	stopRecording();
 
 	sendCommand( GCODE_HOME );
-	silenceWebsocket = 1;
 };
 
 // Stop all operations
@@ -361,15 +365,14 @@ recordBtn.onclick = function(){
 	recordLineBtn.classList.toggle('d-none');
 };
 
-var lastVelocity = 0.0;
 
 // Timer function to keep the 
 var websocketInterval = function() {
 
     // If a connection is established
 	if(websocket.readyState == 1){
-		// If the initial position is received
-		if( initConfig ){
+		// If the configuration has been read
+		if( configRead ){
 			// Toggle between control command and telemetry
 			if(websocketCnt === 0){
 				velocity = joystickControl();
@@ -422,7 +425,7 @@ function initWebSocket(){
 	// Initiate the websocket object
 	websocket = new WebSocket('ws://192.168.4.1:81/');
 
-	initConfig = false;
+	configRead = false;
 	loaderElm.classList.remove('hidden');
 	addToLog("Connecting");
 	setStatus("Connecting", "primary")
@@ -541,17 +544,29 @@ function onWsMessage(event) {
 		accelerationInput.value = conf.acceleration/FULLSTEPS*60.0; // Get it as RPM/s
 
 
-		if(initConfig != true){
+		if(configRead != true){
 			addToLog( "Config received" );
 		}
 
-		initConfig = true;
+		configRead = true;
 	}
 	else if(data.includes("DONE"))
 	{	
 		// uStepper is done after blocking operation.
 		// Safely begin request of data again
 		requestTlm = true;
+	}
+	else if(data.includes("LINE")){
+		var items = data.split(" ");
+		items.shift(); // Remove "LINE" from string
+
+		currentLinenum = parseInt(items[0]);
+		console.log("Line "+(currentLinenum)+" reached");
+	}
+	else if(data.includes("END")){
+		// Recording has reached its end
+		playingRecording = false;
+		playBtn.innerHTML = '<i class="icon-play"></i>';
 	}
 	else {
 		console.log( "Unknown response: \"" + data + "\"");

@@ -160,9 +160,18 @@ input:checked + .slider:before {
 #recording span.linenum{
     display: block;
     float: left;
-    padding: 4px 12px 4px 0;
+    margin: 4px 7px 0px 0;
+    text-align: center;
+    width: 26px;
+    height: 26px;
     color: #768698;
-    border-top:1px solid #2a2c30;
+}
+
+#recording span.linenum.active{
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 100%;
+    color: #fff;
+    background: #1e1f22;
 }
 
 #recording span.line{

@@ -2,11 +2,16 @@
 #include "uStepperWiFi/gcode.cpp"
 #include "uStepperWifi/constants.h"
 
-#define DEBUGPORT Serial
 #define UARTPORT Serial1
+#define DEBUGPORT Serial
+
+#define ANGLE_DEADZONE 0.5
 
 uStepperS stepper;
 GCode comm;
+
+float target = 0.0;
+bool targetReached = true;
 
 // Used to keep track of configuration
 struct{
@@ -18,8 +23,8 @@ struct{
 
 void setup() {
 
-  DEBUGPORT.begin(115200);
   UARTPORT.begin(115200);
+  // DEBUGPORT.begin(115200);
   
   stepper.setup(CLOSEDLOOP,200);
   stepper.disableClosedLoop();
@@ -69,6 +74,15 @@ void loop() {
   // Feed the gcode handler serial data
   if( UARTPORT.available() > 0 )
     comm.insert( UARTPORT.read() );
+
+    
+  if( ! stepper.getMotorState(POSITION_REACHED) ){
+
+    if( !targetReached ){
+      comm.send("REACHED");  
+      targetReached = true;
+    }
+  }
 }
 
 
@@ -96,12 +110,12 @@ void uart_move(char *cmd, char *data){
 }
 
 void uart_moveto(char *cmd, char *data){
-  
   float angle = 0.0;
   comm.value("A", &angle);
   
-  if( !strcmp(cmd, GCODE_MOVETO ))
-    stepper.moveToAngle(angle); 
+  stepper.moveToAngle(angle); 
+  target = angle;
+  targetReached = false; 
 
   comm.send("OK");
 }

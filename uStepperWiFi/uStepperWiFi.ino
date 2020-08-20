@@ -43,9 +43,9 @@ void setup() {
 
   // Setup communication object between ESP and uStepper
   comm.setSendFunc(&uart_send);
-  comm.addCommand( "DATA",  &uart_processData );
-  comm.addCommand( "REACH", &uart_lineReached );
-  comm.addCommand( NULL,    &uart_default );
+  comm.addCommand( "DATA",    &uart_processData );
+  comm.addCommand( "REACHED", &uart_lineReached );
+  comm.addCommand( NULL,      &uart_default );
 
   // Setup communication object between webapp and ESP
   webcomm.setSendFunc(&web_send);
@@ -74,7 +74,7 @@ void loop() {
   webcomm.run();
 
   // Feed the gcode handler serial data
-  while( UARTPORT.available() > 0 )
+  if( UARTPORT.available() > 0 )
     comm.insert( UARTPORT.read() );
 
   recordHandler();
@@ -110,8 +110,15 @@ void uart_processData(char *cmd, char *data){
 }
 
 void uart_lineReached(char *cmd, char *data){
+  char buf[20] = {'\0'};
+  
   positionReached = true;
-  playStepsDelay = millis() + 1000;
+  playStepsDelay = millis() + 500;
+
+  // Telling the GUI which line we are at
+  strcat(buf, "LINE ");
+  sprintf(buf + strlen(buf), "%d", recordLineCount);
+  webcomm.send(buf);
 }
 
 
@@ -144,14 +151,17 @@ void web_record(char *cmd, char *data){
     clearData();
     isRecording = true;
     
-  }else if( !strcmp(cmd, GCODE_RECORD_STOP ))
+  }else if( !strcmp(cmd, GCODE_RECORD_STOP )){
     isRecording = false;
+    playRecording = false;
+    recordLineCount = 0; 
     
-  else if( !strcmp(cmd, GCODE_RECORD_PLAY )){
-    if( playRecording )
-        recordLineCount = 0; 
+  }else if( !strcmp(cmd, GCODE_RECORD_PLAY )){
+    if(playRecording)
+      recordLineCount = 0; 
+      
     playRecording = true;
-    positionReached = true;
+    positionReached = true; // To begin playback
     
   }else if( !strcmp(cmd, GCODE_RECORD_PAUSE ))
     playRecording = false;
@@ -171,13 +181,12 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len) {
 }
 
 void recordHandler(void){
-  if(!playRecording && !positionReached)
-    return;
-  
-  // Send next line from the recording
-  if(millis() > playStepsDelay){
-    positionReached = false;
-    playNextLine();
+  if(playRecording && positionReached){
+    // Send next line from the recording
+    if(millis() > playStepsDelay){
+      positionReached = false;
+      playNextLine();
+    }
   }
 }
 
@@ -220,18 +229,15 @@ void playNextLine( void ){
     strcat(command, GCODE_MOVETO);
     strcat(command, " ");
     strcat(command, buf);
-    // strcat(command, " *255"); // Append checksum
 
-    // For debugging
-    websocket.broadcastTXT("Playing line " + String(recordLineCount) + ": " + String(command));
-    
     comm.send(command);
-    
+
     recordLineCount++;
   }else{
     recordLineCount = 0;  
     playRecording = false;
     playStepsDelay = 0;
+    webcomm.send("END");
   }
 }
 

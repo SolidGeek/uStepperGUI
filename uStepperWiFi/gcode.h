@@ -8,7 +8,7 @@
 #define MAX_PACKET_SIZE 200
 #define MAX_COMMAND_SIZE 10
 /** Time before a packet is considered received in microseconds */
-#define PACKET_TIMEOUT 500
+#define PACKET_TIMEOUT 1000
 
 #define GCODE_DEFAULT_VALID_RES "OK"
 #define GCODE_DEFAULT_ERROR_RES "ERROR"
