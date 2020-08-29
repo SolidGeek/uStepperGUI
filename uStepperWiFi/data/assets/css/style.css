@@ -18,15 +18,38 @@ hr {
 header{
 	background-color: #232528;
 	color: #ffffff;
-	padding: 20px;
+	padding: 20px 0;
 	margin-bottom: 30px;
 }
 
 header h1{
-	margin: 0px;
-	padding: 0px;
-	font-weight: normal;
-	font-size: 25px;
+	font-size: 20px;
+  margin-top: 5px;
+  margin-bottom: 0px;
+}
+
+#slogan{
+  height: 40px;
+}
+
+#logo{
+    height: 36px;
+    width: auto;
+    margin: 0px 15px 0 15px
+}
+
+@media (min-width: 992px){
+  #logo{
+      height: 56px;
+      margin: -10px 15px 0 15px
+  }
+
+  header h1{
+      margin: 0px;
+      padding: 0px;
+      font-weight: normal;
+      font-size: 25px;
+  }
 }
 
 header #comm-status{
@@ -134,11 +157,8 @@ input:checked + .slider:before {
     border-color: #2f3135;
 }
 
-#logo{
-    height: 56px;
-    width: auto;
-    margin: -10px 15px 0 15px
-}
+
+
 
 .input-group-lg>.custom-select, .input-group-sm>.custom-select {
     padding-right: 0rem;
@@ -146,8 +166,7 @@ input:checked + .slider:before {
 
 #recording{
     border-top: 1px solid #3b3e44;
-    margin-top: 10px;
-    padding-top: 5px;
+    padding: 5px 0;
     position: relative;
 }
 
@@ -298,7 +317,7 @@ input:checked + .slider:before {
 
 #joystick{
     width: 100%;
-    height: 200px;
+    height: 220px;
     display: flex;
     justify-content: center;
     flex-direction: column;
@@ -332,10 +351,14 @@ input:checked + .slider:before {
 }
 
 .title{
-    color: #a6c5ff;
+    color: #e47272;
     text-transform: uppercase;
     font-size: 13px;
     font-weight: 700;
+}
+
+.form-control, .custom-select {
+    color: #ffeaea;
 }
 
 .card{
@@ -417,6 +440,10 @@ input[type=range].input-range::-webkit-slider-thumb {
 
 input[type=range].input-range:focus::-webkit-slider-runnable-track {
   background: #34363c;
+}
+
+.input-group-text {
+    color: #808992;
 }
 
 /* prepare wrapper element */

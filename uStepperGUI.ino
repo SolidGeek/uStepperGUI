@@ -19,6 +19,9 @@ struct{
   float velocity = 200.0;     // In steps/s = 60 RPM
   uint8_t brake = COOLBRAKE;
   boolean closedLoop = false;
+  float homeVelocity = 40.0; // In rpm
+  int8_t homeThreshold = 4;
+  bool homeDirection = CW; // In rpm
 } conf;
 
 void setup() {
@@ -38,8 +41,8 @@ void setup() {
   // Add GCode commands
   comm.addCommand( GCODE_MOVE,            &uart_move ); 
   comm.addCommand( GCODE_MOVETO,          &uart_moveto ); 
-  comm.addCommand( GCODE_CONTINUOUS,      &uart_setRPM ); 
-  comm.addCommand( GCODE_BRAKE,           &uart_setRPM ); 
+  comm.addCommand( GCODE_CONTINUOUS,      &uart_continuous ); 
+  comm.addCommand( GCODE_BRAKE,           &uart_continuous ); 
   comm.addCommand( GCODE_HOME,            &uart_home );
 
   comm.addCommand( GCODE_STOP,            &uart_stop );
@@ -83,6 +86,9 @@ void loop() {
       targetReached = true;
     }
   }
+
+  if( stepper.driver.getVelocity() == 0)
+    stepper.moveSteps(0); // Enter positioning mode again
 }
 
 
@@ -102,9 +108,9 @@ void uart_default(char * cmd, char *data){
 void uart_move(char *cmd, char *data){
   int32_t steps = 0;
   comm.value("A", &steps);
-  
-  if( !strcmp(cmd, GCODE_MOVE ))
-    stepper.moveSteps(steps); 
+
+  stepper.setMaxVelocity( conf.velocity );
+  stepper.moveSteps(steps); 
 
   comm.send("OK");
 }
@@ -112,7 +118,8 @@ void uart_move(char *cmd, char *data){
 void uart_moveto(char *cmd, char *data){
   float angle = 0.0;
   comm.value("A", &angle);
-  
+
+  stepper.setMaxVelocity( conf.velocity );
   stepper.moveToAngle(angle); 
   target = angle;
   targetReached = false; 
@@ -120,22 +127,36 @@ void uart_moveto(char *cmd, char *data){
   comm.send("OK");
 }
 
-
-void uart_setRPM(char *cmd, char *data){
+void uart_continuous(char *cmd, char *data){
   float velocity = 0.0;
   comm.value("A", &velocity);
 
   if( !strcmp(cmd, GCODE_CONTINUOUS ))
     stepper.setRPM(velocity);
-  else
+  else{
     stepper.setRPM(0);
-    
+  }
+  
   comm.send("OK");
 }
 
 void uart_home(char *cmd, char *data){ 
-  stepper.moveToEnd( CW );
+
+  float velocity    = conf.homeVelocity;
+  int32_t threshold = conf.homeThreshold;
+  int32_t dir       = conf.homeDirection;
+
+  comm.value("V", &velocity);
+  comm.value("T", &threshold);
+  comm.value("D", &dir);
+
+  conf.homeVelocity   = velocity;
+  conf.homeThreshold  = (int8_t)threshold;
+  conf.homeDirection  = (bool)dir;
+  
+  stepper.moveToEnd( conf.homeDirection, conf.homeVelocity, conf.homeThreshold );
   stepper.encoder.setHome(); // Reset home position
+  
   comm.send("DONE"); // Tell GUI homing is done
 }
 
@@ -164,7 +185,6 @@ void uart_config(char *cmd, char *data){
   // If no value can be extracted dont change config
   if( comm.value("A", &value) ){
     if( !strcmp(cmd, GCODE_SET_SPEED)){
-      stepper.setMaxVelocity( value );
       conf.velocity = value;
     }else if( !strcmp(cmd, GCODE_SET_ACCEL)){
       stepper.setMaxAcceleration( value );
@@ -210,12 +230,14 @@ void uart_sendConfig(char *cmd, char *data){
   char buf[50] = {'\0'};
   char strVel[10] = {'\0'};
   char strAccel[10] = {'\0'};
-
+  char strHomeVel[10] = {'\0'};
+  
   dtostrf(conf.velocity, 4, 2, strVel);
   dtostrf(conf.acceleration, 4, 2, strAccel);
+  dtostrf(conf.homeVelocity, 4, 2, strHomeVel);
   
   strcat(buf, "CONF ");
-  sprintf(buf + strlen(buf), "V%s A%s B%d C%d", strVel, strAccel, conf.brake, conf.closedLoop);
+  sprintf(buf + strlen(buf), "V%s A%s B%d C%d D%s E%d F%d", strVel, strAccel, conf.brake, conf.closedLoop, strHomeVel, conf.homeThreshold, conf.homeDirection);
 
   comm.send(buf);
 }

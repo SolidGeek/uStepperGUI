@@ -6,6 +6,8 @@ const FULLSTEPS = 200;
 const MICROSTEPS = 256;
 const STEPS_PER_REV = FULLSTEPS * MICROSTEPS;
 const DEGREES_PER_REV = 360;
+const STEP_TO_RPM = 60.0/FULLSTEPS;	// steps/s tp rpm
+const RPM_TO_STEP = FULLSTEPS/60.0; // rpm to steps/s
 
 // Move commands
 const GCODE_MOVE 			= "G0";
@@ -36,6 +38,9 @@ const GCODE_REQUEST_CONFIG	= "M16";
 const APP_UNIT_DEGREES = 0;
 const APP_UNIT_STEPS = 1;
 
+const STEPPER_UNIT_RPM = 0;
+const STEPPER_UNIT_STEP = 1;
+
 
 const wsInterval = 100; 				// Min interval in ms between each command (not guaranteed)
 const fileUploadURL = "/upload"; 	// Address to upload
@@ -55,10 +60,13 @@ var tlm = {
 };
 
 var conf = {
-	velocity: 0.0,
-	acceleration: 0.0,
+	velocity: 0.0,		// In steps
+	acceleration: 0.0, 	// In steps/s
 	brake: 0,
-	closedLoop: 0
+	closedLoop: 0,
+	homeVelocity: 0.0, // In rpm 
+	homeThreshold: 0,
+	homeDirection: 0
 };
 
 var recording = false; 			// Flag telling if a sequence is being recorded
@@ -71,7 +79,9 @@ var websocketCnt = 0;
 var lastVelocity = 0.0;
 var currentLinenum = 0;
 
-var positionUnit = APP_UNIT_DEGREES;
+var positionUnit 		= APP_UNIT_DEGREES;
+var velocityUnit 		= STEPPER_UNIT_RPM;
+var accelerationUnit 	= STEPPER_UNIT_RPM;
 
 // Element references to modify DOM
 var statusBar 		= document.getElementById("comm-status");
@@ -93,67 +103,119 @@ var dataVelocityElm		= document.getElementById('dataVelocity');
 var dataPositionDriverElm		= document.getElementById('dataPositionDriver');
 var dataAbsPositionDriverElm	= document.getElementById('dataAbsPositionDriver');
 var dataVelocityDriverElm		= document.getElementById('dataVelocityDriver');
-var velocityInput 		= document.getElementById('velocityInput');
-var accelerationInput 	= document.getElementById('accelerationInput');
+var velocityInput 			= document.getElementById('velocityInput');
+var accelerationInput 		= document.getElementById('accelerationInput');
+var homeThrsInput			= document.getElementById('homeThrsInput');
+var homeDirSelect			= document.getElementById('homeDirSelect')
+var homeVelInput		= document.getElementById('homeVelInput')
 var moveInput 			= document.getElementById('moveInput');
 var moveCWBtn 			= document.getElementById('moveCWBtn');
 var moveCCWBtn 			= document.getElementById('moveCCWBtn');
 var anglePointer 		= document.getElementById('anglePointer');
 var closedLoopCheck 	= document.getElementById('closedLoopCheck');
-var unitsRadios = document.getElementsByName('unit'); 
-var brakeRadios = document.getElementsByName('brake'); 
+var posUnitSelect = document.getElementById('posunit'); 
+var velUnitSelect = document.getElementById('velunit'); 
+var brakeSelect = document.getElementById('brake'); 
 var positionUnitElm = document.getElementsByClassName('positionUnit');
+var velocityUnitElm = document.getElementsByClassName('velocityUnit');
+var accelerationUnitElm = document.getElementsByClassName('accelerationUnit');
 var loaderElm = document.getElementById('loader');
 
-// Add events for radio buttons
-for (var i = 0; i < unitsRadios.length; i++) {
-	unitsRadios[i].addEventListener('change', function(event) {
-		var value = event.target.value;
-		var moveunit = document.getElementById('moveInputWrapper');
+// Add events for selects
+posUnitSelect.onchange = function(event) {
+	var value = event.target.value;
+	var moveunit = document.getElementById('moveInputWrapper');
 
-		var string = "";
+	var posunit = "";
 
-		switch( value ){
-			case "degress":
-				positionUnit = APP_UNIT_DEGREES;
-				moveunit.classList.remove('unit-step');
-				moveunit.classList.add('unit-degree');
-				string = "°";
-			break;
+	if( value == 'degree'){
+		positionUnit = APP_UNIT_DEGREES;
+		moveunit.classList.remove('unit-step');
+		moveunit.classList.add('unit-degree');
+		posunit = "&#176;";
+	}else if( value == 'step' ){
+		positionUnit = APP_UNIT_STEPS;
+		moveunit.classList.remove('unit-degree');
+		moveunit.classList.add('unit-step');
+		posunit = "step";
+	}
 
-			case "steps":
-				positionUnit = APP_UNIT_STEPS;
-				moveunit.classList.remove('unit-degree');
-				moveunit.classList.add('unit-step');
-				string = "steps";
-			break;
-		}
+	// Update unit labels
+	for (var i = 0; i < positionUnitElm.length; i++) {
+		positionUnitElm[i].innerHTML = posunit;
+	}
+};
 
-		for (var i = 0; i < positionUnitElm.length; i++) {
-			positionUnitElm[i].innerHTML = string;
-		}
-	});
+// Add events for selects
+velUnitSelect.onchange = function(event) {
+	var value = event.target.value;
+
+	var velUnit = "";
+	var accelUnit = "";
+
+	if( value == 'rpm' ){
+		velocityUnit = STEPPER_UNIT_RPM;
+		velUnit = 'rpm';
+		accelUnit = 'rpm/s';
+		// Update values of input fields
+		velocityInput.value = (conf.velocity*STEP_TO_RPM).toFixed(2);
+		accelerationInput.value = (conf.acceleration*STEP_TO_RPM).toFixed(2);
+		homeVelInput.value = conf.homeVelocity;
+
+	}else if( value == 'step' ){
+		velocityUnit = STEPPER_UNIT_STEP;
+		velUnit = 'step/s';
+		accelUnit = 'step/s^2';
+		// Update values of input fields
+		velocityInput.value = conf.velocity;
+		accelerationInput.value = conf.acceleration;
+		homeVelInput.value = (conf.homeVelocity*RPM_TO_STEP).toFixed(2);
+	}
+
+	// Update all unit labels
+	for (var i = 0; i < velocityUnitElm.length; i++) {
+		velocityUnitElm[i].innerHTML = velUnit;
+	}
+	for (var i = 0; i < accelerationUnitElm.length; i++) {
+		accelerationUnitElm[i].innerHTML = accelUnit;
+	}
+};
+
+// Add events for brake method select
+brakeSelect.onchange = function(event) {
+	var value = event.target.value;
+
+	switch( value ){
+		case "free":
+			sendCommand(GCODE_SET_BRAKE_FREE);
+		break;
+
+		case "cool":
+			sendCommand(GCODE_SET_BRAKE_COOL);
+		break;
+
+		case "hard":
+			sendCommand(GCODE_SET_BRAKE_HARD);
+		break;
+	}
+};
+
+homeVelInput.onchange = function(){
+	var velocity 		= parseFloat(homeVelInput.value);
+	
+	if( velocityUnit == STEPPER_UNIT_RPM ){
+		conf.homeVelocity = velocity.toFixed(2);
+	}else if( velocityUnit == STEPPER_UNIT_STEP ){
+		conf.homeVelocity = (velocity * STEP_TO_RPM).toFixed(2);
+	}
 }
 
-// Add events for radio buttons
-for (var i = 0; i < brakeRadios.length; i++) {
-	brakeRadios[i].addEventListener('change', function(event) {
-		var value = event.target.value;
+homeDirSelect.onchange = function(){
+	conf.homeDirection = parseInt(homeDirSelect.value);
+}
 
-		switch( value ){
-			case "free":
-				sendCommand(GCODE_SET_BRAKE_FREE);
-			break;
-
-			case "cool":
-				sendCommand(GCODE_SET_BRAKE_COOL);
-			break;
-
-			case "hard":
-				sendCommand(GCODE_SET_BRAKE_HARD);
-			break;
-		}
-	});
+homeThrsInput.onchange = function(){
+	conf.homeThreshold = parseFloat(homeThrsInput.value).toFixed(2);
 }
 
 // Call this function when the gui is loaded
@@ -302,7 +364,11 @@ homeBtn.onclick = function(){
 	requestTlm = false;
 	stopRecording();
 
-	sendCommand( GCODE_HOME );
+	sendCommand( GCODE_HOME, [
+		{name: "V", value: conf.homeVelocity},
+		{name: "T", value: conf.homeThreshold},
+		{name: "D", value: conf.homeDirection}
+	]);
 };
 
 // Stop all operations
@@ -365,6 +431,35 @@ recordBtn.onclick = function(){
 	recordLineBtn.classList.toggle('d-none');
 };
 
+velocityInput.onchange = function(){
+	var value = parseFloat(velocityInput.value);
+
+	// Input velocity is in RPM
+	if(velocityUnit == STEPPER_UNIT_RPM){
+		conf.velocity = (value*RPM_TO_STEP).toFixed(2);
+
+	// Input velocity is in step/s
+	}else if(velocityUnit == STEPPER_UNIT_STEP){
+		conf.velocity = value.toFixed(2);
+	}
+
+	sendCommand(GCODE_SET_SPEED, [{name: "A", value: conf.velocity}]);
+}
+
+accelerationInput.onchange = function(){
+	var value = parseFloat(accelerationInput.value);
+
+	// Input velocity is in RPM
+	if(accelerationUnit == STEPPER_UNIT_RPM){
+		conf.acceleration = (value*RPM_TO_STEP).toFixed(2);
+
+	// Input velocity is in step/s
+	}else if(accelerationUnit == STEPPER_UNIT_STEP){
+		conf.acceleration = value.toFixed(2);
+	}
+
+	sendCommand(GCODE_SET_ACCEL, [{name: "A", value: conf.acceleration}]);
+}
 
 // Timer function to keep the 
 var websocketInterval = function() {
@@ -406,13 +501,13 @@ function joystickControl(){
 	{
 		var values = angleJoystick.getRatio();
 
-		var velocity = values.x * velocityInput.value;
+		var velocity = values.x * conf.velocity * STEP_TO_RPM;
 		velocity = velocity.toFixed(2);
 		
 		return velocity;
 	}
 
-	return 0.0;
+	return 0;
 }
 
 // Function to initialize the websocket communication
@@ -535,14 +630,27 @@ function onWsMessage(event) {
 	    	values[i] = items[i].substring(1, items[i].length);
 		}
 
-		conf.velocity 		= parseFloat(values[0]);
-		conf.acceleration 	= parseFloat(values[1]);
+		conf.velocity 		= parseFloat(values[0]).toFixed(2); // in steps/s
+		conf.acceleration 	= parseFloat(values[1]).toFixed(2); // in steps/s^2
 		conf.brakeMethod 	= parseInt(values[2]);
 		conf.closedLoop 	= parseInt(values[3]);
+		conf.homeVelocity	= parseFloat(values[4]).toFixed(2);
+		conf.homeThreshold 	= parseInt(values[5]);
+		conf.homeDirection 	= parseInt(values[6]);
 
-		velocityInput.value = conf.velocity/FULLSTEPS*60.0; // Get it as RPM
-		accelerationInput.value = conf.acceleration/FULLSTEPS*60.0; // Get it as RPM/s
+		if( velocityUnit == STEPPER_UNIT_RPM )
+			velocityInput.value = (conf.velocity*STEP_TO_RPM).toFixed(2); // Get it as RPM
+		else
+			velocityInput.value = conf.velocity; 
 
+		if( velocityUnit == STEPPER_UNIT_RPM)
+			accelerationInput.value = (conf.acceleration*STEP_TO_RPM).toFixed(2); // Get it as RPM/s
+		else
+			accelerationInput.value = conf.acceleration;
+
+		homeVelInput.value = conf.homeVelocity;
+		homeThrsInput.value = conf.homeThreshold;
+		homeDirSelect.value = conf.homeDirection;
 
 		if(configRead != true){
 			addToLog( "Config received" );
