@@ -669,7 +669,7 @@ function onWsMessage(event) {
 		items.shift(); // Remove "LINE" from string
 
 		currentLinenum = parseInt(items[0]);
-		console.log("Line "+(currentLinenum)+" reached");
+		console.log("Playing line: "+(currentLinenum));
 	}
 	else if(data.includes("END")){
 		// Recording has reached its end

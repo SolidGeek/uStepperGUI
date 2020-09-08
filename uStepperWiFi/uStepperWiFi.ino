@@ -21,13 +21,14 @@ const char *password  = "12345679";
 bool ledState             = LOW;
 bool isRecording          = false;
 bool playRecording        = false;
-bool positionReached      = false;
+bool moreLines            = false;
 char * response           = NULL;
 uint8_t statusLed         = 4;
 uint32_t lastPackage      = 0;
 uint32_t playStepsDelay   = 0;
 uint32_t previousBlink    = 0;
 uint16_t recordLineCount  = 0;
+uint16_t lastLine = 0;
 
 char recordPath[]         = "/recording.txt";
 
@@ -110,17 +111,14 @@ void uart_processData(char *cmd, char *data){
 }
 
 void uart_lineReached(char *cmd, char *data){
-  char buf[20] = {'\0'};
   
-  positionReached = true;
-  playStepsDelay = millis() + 500;
+  if( moreLines && lastLine == recordLineCount ){
 
-  // Telling the GUI which line we are at
-  strcat(buf, "LINE ");
-  sprintf(buf + strlen(buf), "%d", recordLineCount);
-  webcomm.send(buf);
+    recordLineCount++;
+    playStepsDelay = millis() + 500;
+    
+  }
 }
-
 
 void web_send(char *data){
   websocket.broadcastTXT(data);
@@ -157,11 +155,10 @@ void web_record(char *cmd, char *data){
     recordLineCount = 0; 
     
   }else if( !strcmp(cmd, GCODE_RECORD_PLAY )){
-    if(playRecording)
+    if( ! playRecording )
       recordLineCount = 0; 
       
     playRecording = true;
-    positionReached = true; // To begin playback
     
   }else if( !strcmp(cmd, GCODE_RECORD_PAUSE ))
     playRecording = false;
@@ -181,11 +178,27 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len) {
 }
 
 void recordHandler(void){
-  if(playRecording && positionReached){
-    // Send next line from the recording
+  char buf[20] = {'\0'};
+  
+  if(playRecording){
+    // Send next line from the recording (and continue to send until reached (redundancy)
     if(millis() > playStepsDelay){
-      positionReached = false;
-      playNextLine();
+
+      lastLine = recordLineCount;
+      moreLines = sendRecordLine();
+      playStepsDelay = millis() + 250;
+
+      if( ! moreLines ){
+        playRecording = false;
+        recordLineCount = 0;  
+        playStepsDelay = 0;
+        webcomm.send("END");        
+      }else{
+        // Telling the GUI which line we are at
+        strcat(buf, "LINE ");
+        sprintf(buf + strlen(buf), "%d", recordLineCount);
+        webcomm.send(buf);
+      }
     }
   }
 }
@@ -205,7 +218,7 @@ void ledHandler(void){
   }  
 }
 
-void playNextLine( void ){
+bool sendRecordLine( void ){
   File file = SPIFFS.open(recordPath, "r");
   file.setTimeout(0); // Set timeout when no newline was found (no timeout plz).
 
@@ -213,14 +226,14 @@ void playNextLine( void ){
   char buf[50];
   uint8_t len = 0;
 
-  // Read through all lines until the wanted line is reached... Is there a better way?
+  // Read through all lines until the wanted line is reached
   for(uint16_t i = 0; i <= recordLineCount; i++){
     memset(buf, 0, sizeof(buf));
-    len = file.readBytesUntil('\n', buf, 50);
+    len = file.readBytesUntil('\n', buf, sizeof(buf));
   }
 
-  // Check if any line was read
-  if (len != 0){
+  // Minimum command lenght of 2 characters, as to not send a newline by mistake
+  if (len > 2){
     // Append null termination to the buffer for good measure
     buf[len] = '\0'; 
     
@@ -232,13 +245,12 @@ void playNextLine( void ){
 
     comm.send(command);
 
-    recordLineCount++;
-  }else{
-    recordLineCount = 0;  
-    playRecording = false;
-    playStepsDelay = 0;
-    webcomm.send("END");
+    return true;
   }
+
+  // No more lines to be read
+  return false;
+  
 }
 
 void saveData(char *data) {
